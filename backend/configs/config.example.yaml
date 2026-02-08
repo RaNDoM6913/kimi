@@ -1,0 +1,93 @@
+env: dev
+
+http:
+  addr: ":8080"
+  read_timeout: 5s
+  write_timeout: 10s
+  idle_timeout: 30s
+
+log:
+  level: debug
+
+postgres:
+  dsn: postgres://app:app@localhost:5432/tgapp?sslmode=disable
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+s3:
+  endpoint: localhost:9000
+  access_key: minio
+  secret_key: minio123
+  bucket: tgapp-private
+  use_ssl: false
+
+auth:
+  jwt_secret: change-me
+  jwt_access_ttl: 15m
+  refresh_ttl: 720h
+
+bot:
+  token: ""
+  cleanup_interval: 6h
+  circle_retention: 8760h
+
+remote:
+  limits:
+    free_likes_per_day: 35
+    plus_unlimited_ui: true
+    plus_rate_per_minute: 60
+    plus_rate_per_10sec: 15
+    plus_rewinds_per_day: 3
+  ads_inject:
+    free: 7
+    plus: 37
+  filters:
+    age_min: 18
+    age_max: 30
+    radius_default_km: 3
+    radius_max_km: 50
+  goals_mode: soft_priority
+  boost:
+    duration: 30m
+  cities:
+    - id: minsk
+      name: Minsk
+      lat: 53.9006
+      lon: 27.5590
+    - id: brest
+      name: Brest
+      lat: 52.0976
+      lon: 23.7341
+    - id: vitebsk
+      name: Vitebsk
+      lat: 55.1904
+      lon: 30.2049
+    - id: gomel
+      name: Gomel
+      lat: 52.4412
+      lon: 30.9878
+    - id: grodno
+      name: Grodno
+      lat: 53.6694
+      lon: 23.8131
+    - id: mogilev
+      name: Mogilev
+      lat: 53.8980
+      lon: 30.3325
+  me_defaults:
+    username_prefix: tg_
+    city_id: minsk
+    moderation_status: pending
+    timezone: Europe/Minsk
+    is_plus: false
+    plus_duration: 0s
+    too_fast_retry_after_sec: 0
+    entitlements:
+      superlike_credits: 0
+      boost_credits: 0
+      reveal_credits: 0
+      message_wo_match_credits: 0
+      incognito_duration: 0s

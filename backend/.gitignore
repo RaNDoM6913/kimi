@@ -1,0 +1,21 @@
+# binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# build artifacts
+*.test
+*.out
+coverage.out
+
+# env/local
+.env
+configs/config.yaml
+
+# IDE
+.DS_Store
+.idea/
+.vscode/

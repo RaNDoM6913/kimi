@@ -1,0 +1,200 @@
+package feed
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
+)
+
+type feedRepoStub struct {
+	viewer    pgrepo.FeedViewerContext
+	viewerErr error
+	items     []pgrepo.FeedCandidate
+	lastQuery pgrepo.FeedQuery
+}
+
+type feedAdStoreStub struct {
+	items []pgrepo.AdCardRecord
+}
+
+func (s *feedAdStoreStub) ListActive(_ context.Context, _ string, limit int, _ time.Time) ([]pgrepo.AdCardRecord, error) {
+	if limit <= 0 || limit > len(s.items) {
+		limit = len(s.items)
+	}
+	out := make([]pgrepo.AdCardRecord, 0, limit)
+	out = append(out, s.items[:limit]...)
+	return out, nil
+}
+
+type feedPlusStoreStub struct {
+	isPlus bool
+}
+
+func (s *feedPlusStoreStub) IsPlusActive(_ context.Context, _ int64, _ time.Time) (bool, *time.Time, error) {
+	return s.isPlus, nil, nil
+}
+
+func (s *feedRepoStub) GetViewerContext(_ context.Context, _ int64) (pgrepo.FeedViewerContext, error) {
+	if s.viewerErr != nil {
+		return pgrepo.FeedViewerContext{}, s.viewerErr
+	}
+	return s.viewer, nil
+}
+
+func (s *feedRepoStub) ListCandidates(_ context.Context, q pgrepo.FeedQuery) ([]pgrepo.FeedCandidate, error) {
+	s.lastQuery = q
+	limit := q.Limit
+	if limit <= 0 || limit > len(s.items) {
+		limit = len(s.items)
+	}
+	out := make([]pgrepo.FeedCandidate, 0, limit)
+	out = append(out, s.items[:limit]...)
+	return out, nil
+}
+
+func TestGetUsesDefaultsAndReturnsNextCursor(t *testing.T) {
+	repo := &feedRepoStub{
+		viewer: pgrepo.FeedViewerContext{
+			UserID:     10,
+			CityID:     "minsk",
+			Gender:     "male",
+			LookingFor: "female",
+			AgeMin:     0,
+			AgeMax:     0,
+			RadiusKM:   0,
+			Goals:      []string{"relationship"},
+		},
+		items: []pgrepo.FeedCandidate{
+			{
+				UserID:        200,
+				DisplayName:   "Anna",
+				CityID:        "minsk",
+				City:          "Minsk",
+				Age:           25,
+				GoalsPriority: 1,
+				CreatedAt:     time.Date(2026, 2, 8, 11, 0, 0, 0, time.UTC),
+			},
+			{
+				UserID:        199,
+				DisplayName:   "Kate",
+				CityID:        "minsk",
+				City:          "Minsk",
+				Age:           24,
+				GoalsPriority: 0,
+				CreatedAt:     time.Date(2026, 2, 8, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	service := NewService(repo, Config{
+		DefaultAgeMin:   18,
+		DefaultAgeMax:   30,
+		DefaultRadiusKM: 3,
+		MaxRadiusKM:     50,
+	})
+
+	result, err := service.Get(context.Background(), 10, "", 2)
+	if err != nil {
+		t.Fatalf("get feed: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("unexpected items count: got %d want %d", len(result.Items), 2)
+	}
+	if result.NextCursor == "" {
+		t.Fatalf("expected next cursor for full page")
+	}
+
+	if repo.lastQuery.AgeMin != 18 || repo.lastQuery.AgeMax != 30 {
+		t.Fatalf("unexpected age filter defaults: got %d-%d", repo.lastQuery.AgeMin, repo.lastQuery.AgeMax)
+	}
+	if repo.lastQuery.RadiusKM != 3 {
+		t.Fatalf("unexpected radius default: got %d want %d", repo.lastQuery.RadiusKM, 3)
+	}
+
+	_, err = service.Get(context.Background(), 10, result.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("get feed with cursor: %v", err)
+	}
+	if !repo.lastQuery.HasCursor {
+		t.Fatalf("expected cursor query flag")
+	}
+	if repo.lastQuery.CursorUserID != 199 {
+		t.Fatalf("unexpected cursor user id: got %d want %d", repo.lastQuery.CursorUserID, 199)
+	}
+}
+
+func TestGetInvalidCursor(t *testing.T) {
+	repo := &feedRepoStub{
+		viewer: pgrepo.FeedViewerContext{
+			UserID: 1,
+			CityID: "minsk",
+		},
+	}
+
+	service := NewService(repo, Config{})
+	_, err := service.Get(context.Background(), 1, "%%%invalid%%%", 20)
+	if !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("expected ErrInvalidCursor, got %v", err)
+	}
+}
+
+func TestGetInjectsAdsByInterval(t *testing.T) {
+	repo := &feedRepoStub{
+		viewer: pgrepo.FeedViewerContext{
+			UserID:     10,
+			CityID:     "minsk",
+			Gender:     "male",
+			LookingFor: "female",
+			AgeMin:     18,
+			AgeMax:     30,
+			RadiusKM:   3,
+			Goals:      []string{"relationship"},
+		},
+		items: []pgrepo.FeedCandidate{
+			{UserID: 1, DisplayName: "u1", CityID: "minsk", City: "Minsk", Age: 21, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 12, 0, 0, 0, time.UTC)},
+			{UserID: 2, DisplayName: "u2", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 59, 0, 0, time.UTC)},
+			{UserID: 3, DisplayName: "u3", CityID: "minsk", City: "Minsk", Age: 23, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 58, 0, 0, time.UTC)},
+			{UserID: 4, DisplayName: "u4", CityID: "minsk", City: "Minsk", Age: 24, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 57, 0, 0, time.UTC)},
+			{UserID: 5, DisplayName: "u5", CityID: "minsk", City: "Minsk", Age: 25, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 56, 0, 0, time.UTC)},
+			{UserID: 6, DisplayName: "u6", CityID: "minsk", City: "Minsk", Age: 26, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 55, 0, 0, time.UTC)},
+			{UserID: 7, DisplayName: "u7", CityID: "minsk", City: "Minsk", Age: 27, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 54, 0, 0, time.UTC)},
+			{UserID: 8, DisplayName: "u8", CityID: "minsk", City: "Minsk", Age: 28, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 53, 0, 0, time.UTC)},
+		},
+	}
+
+	service := NewService(repo, Config{
+		DefaultAgeMin:   18,
+		DefaultAgeMax:   30,
+		DefaultRadiusKM: 3,
+		MaxRadiusKM:     50,
+	})
+	service.AttachAds(
+		&feedAdStoreStub{
+			items: []pgrepo.AdCardRecord{
+				{ID: 101, Kind: "IMAGE", Title: "Ad1", AssetURL: "s3://ad1", ClickURL: "https://ad1"},
+			},
+		},
+		&feedPlusStoreStub{isPlus: false},
+		AdsConfig{
+			FreeEvery: 3,
+			PlusEvery: 37,
+		},
+	)
+
+	result, err := service.Get(context.Background(), 10, "", 8)
+	if err != nil {
+		t.Fatalf("get feed with ads: %v", err)
+	}
+	if len(result.Items) != 10 {
+		t.Fatalf("unexpected mixed items count: got %d want %d", len(result.Items), 10)
+	}
+	if !result.Items[3].IsAd || result.Items[3].Ad == nil || result.Items[3].Ad.ID != 101 {
+		t.Fatalf("expected ad at index 3")
+	}
+	if !result.Items[7].IsAd || result.Items[7].Ad == nil || result.Items[7].Ad.ID != 101 {
+		t.Fatalf("expected ad at index 7")
+	}
+}

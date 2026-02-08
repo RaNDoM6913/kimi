@@ -1,0 +1,1174 @@
+openapi: 3.0.3
+info:
+  title: Telegram Dating Mini App API
+  version: 0.2.0
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: User
+  - name: Tabs
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/telegram:
+    post:
+      tags: [Auth]
+      summary: Authenticate via Telegram init data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramAuthRequest'
+      responses:
+        '200':
+          description: Auth success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and issue new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token pair rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke current session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout_all:
+    post:
+      tags: [Auth]
+      summary: Revoke all user sessions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: All sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/me:
+    get:
+      tags: [User]
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/config:
+    get:
+      tags: [Tabs]
+      summary: Client config (skeleton)
+  /v1/quota:
+    get:
+      tags: [Tabs]
+      summary: Quota snapshot (v1)
+      security:
+        - bearerAuth: []
+  /v1/location:
+    post:
+      tags: [Tabs]
+      summary: Update location (skeleton)
+  /v1/profile:
+    get:
+      tags: [Tabs]
+      summary: Get profile (skeleton)
+    put:
+      tags: [Tabs]
+      summary: Update profile (skeleton)
+  /v1/media/upload:
+    post:
+      tags: [Tabs]
+      summary: Request signed media upload URL (skeleton)
+  /v1/moderation/status:
+    get:
+      tags: [Tabs]
+      summary: Moderation status (skeleton)
+  /v1/feed:
+    get:
+      tags: [Tabs]
+      summary: Feed list (v1)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Feed page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedResponse'
+  /feed:
+    get:
+      tags: [Tabs]
+      summary: Feed list (root alias)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Feed page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedResponse'
+  /v1/swipes:
+    post:
+      tags: [Tabs]
+      summary: Swipe action with quota checks (v1)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwipeRequest'
+      responses:
+        '200':
+          description: Swipe accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwipeResponse'
+  /swipe:
+    post:
+      tags: [Tabs]
+      summary: Swipe action with quota checks (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwipeRequest'
+      responses:
+        '200':
+          description: Swipe accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwipeResponse'
+  /quota:
+    get:
+      tags: [Tabs]
+      summary: Quota snapshot (root alias)
+      security:
+        - bearerAuth: []
+  /v1/rewind:
+    post:
+      tags: [Tabs]
+      summary: Rewind action (v1)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Rewind accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RewindResponse'
+  /rewind:
+    post:
+      tags: [Tabs]
+      summary: Rewind action (root alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Rewind accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RewindResponse'
+  /v1/boost:
+    post:
+      tags: [Tabs]
+      summary: Activate boost (skeleton)
+  /v1/likes:
+    get:
+      tags: [Tabs]
+      summary: Incoming likes (v1 alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Incoming likes response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikesIncomingResponse'
+  /v1/likes/incoming:
+    get:
+      tags: [Tabs]
+      summary: Incoming likes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Incoming likes response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikesIncomingResponse'
+  /likes/incoming:
+    get:
+      tags: [Tabs]
+      summary: Incoming likes (root alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Incoming likes response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikesIncomingResponse'
+  /v1/likes/reveal_one:
+    post:
+      tags: [Tabs]
+      summary: Reveal one incoming like
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Revealed profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikesRevealOneResponse'
+  /likes/reveal_one:
+    post:
+      tags: [Tabs]
+      summary: Reveal one incoming like (root alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Revealed profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikesRevealOneResponse'
+  /v1/matches:
+    get:
+      tags: [Tabs]
+      summary: Active matches
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Matches list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchesResponse'
+  /matches:
+    get:
+      tags: [Tabs]
+      summary: Active matches (root alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Matches list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchesResponse'
+  /v1/unmatch:
+    post:
+      tags: [Tabs]
+      summary: Remove match
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnmatchRequest'
+      responses:
+        '200':
+          description: Unmatch result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /unmatch:
+    post:
+      tags: [Tabs]
+      summary: Remove match (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnmatchRequest'
+      responses:
+        '200':
+          description: Unmatch result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /v1/block:
+    post:
+      tags: [Tabs]
+      summary: Block user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockRequest'
+      responses:
+        '200':
+          description: Block result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /block:
+    post:
+      tags: [Tabs]
+      summary: Block user (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockRequest'
+      responses:
+        '200':
+          description: Block result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /v1/report:
+    post:
+      tags: [Tabs]
+      summary: Report user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportRequest'
+      responses:
+        '200':
+          description: Report result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /report:
+    post:
+      tags: [Tabs]
+      summary: Report user (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportRequest'
+      responses:
+        '200':
+          description: Report result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /v1/ads/impression:
+    post:
+      tags: [Tabs]
+      summary: Track ad impression
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /ads/impression:
+    post:
+      tags: [Tabs]
+      summary: Track ad impression (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /v1/ads/click:
+    post:
+      tags: [Tabs]
+      summary: Track ad click
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /ads/click:
+    post:
+      tags: [Tabs]
+      summary: Track ad click (root alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdEventRequest'
+      responses:
+        '200':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OKResponse'
+  /v1/dm/invite:
+    post:
+      tags: [Tabs]
+      summary: Create Telegram DM invite/deep-link (skeleton)
+  /v1/partners:
+    get:
+      tags: [Tabs]
+      summary: Partners tab (skeleton)
+  /v1/settings:
+    get:
+      tags: [Tabs]
+      summary: Settings tab (skeleton)
+  /v1/travel:
+    post:
+      tags: [Tabs]
+      summary: Travel mode (skeleton)
+  /purchase/create:
+    post:
+      tags: [Tabs]
+      summary: Create purchase order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreateRequest'
+      responses:
+        '200':
+          description: Purchase created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseCreateResponse'
+  /v1/purchase/create:
+    post:
+      tags: [Tabs]
+      summary: Create purchase order (v1 alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreateRequest'
+      responses:
+        '200':
+          description: Purchase created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseCreateResponse'
+  /purchase/webhook:
+    post:
+      tags: [Tabs]
+      summary: Purchase provider webhook confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseWebhookRequest'
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseWebhookResponse'
+  /v1/purchase/webhook:
+    post:
+      tags: [Tabs]
+      summary: Purchase provider webhook confirmation (v1 alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseWebhookRequest'
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseWebhookResponse'
+  /entitlements:
+    get:
+      tags: [Tabs]
+      summary: Current user entitlements
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Entitlements snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntitlementsResponse'
+  /v1/entitlements:
+    get:
+      tags: [Tabs]
+      summary: Current user entitlements (v1 alias)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Entitlements snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntitlementsResponse'
+  /v1/purchase:
+    post:
+      tags: [Tabs]
+      summary: Purchase create endpoint (legacy alias)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreateRequest'
+      responses:
+        '200':
+          description: Purchase created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseCreateResponse'
+  /events/batch:
+    post:
+      tags: [Tabs]
+      summary: Ingest analytics events batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventsBatchRequest'
+      responses:
+        '200':
+          description: Batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsBatchResponse'
+  /v1/events/batch:
+    post:
+      tags: [Tabs]
+      summary: Ingest analytics events batch (v1 alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventsBatchRequest'
+      responses:
+        '200':
+          description: Batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsBatchResponse'
+  /v1/events:
+    post:
+      tags: [Tabs]
+      summary: Analytics events ingest (legacy alias)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventsBatchRequest'
+      responses:
+        '200':
+          description: Batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsBatchResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+
+    TelegramAuthRequest:
+      type: object
+      properties:
+        init_data:
+          type: string
+      required: [init_data]
+
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required: [refresh_token]
+
+    MeResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        role:
+          type: string
+      required: [id, role]
+
+    AuthTokensResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in_sec:
+          type: integer
+          format: int64
+        me:
+          $ref: '#/components/schemas/MeResponse'
+      required: [access_token, refresh_token, expires_in_sec, me]
+
+    LogoutResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
+
+    FeedItemResponse:
+      type: object
+      properties:
+        is_ad:
+          type: boolean
+        ad:
+          $ref: '#/components/schemas/AdCard'
+        user_id:
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        age:
+          type: integer
+        city_id:
+          type: string
+        city:
+          type: string
+        distance_km:
+          type: number
+      required: [is_ad]
+
+    AdCard:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum: [IMAGE, VIDEO]
+        title:
+          type: string
+        asset_url:
+          type: string
+        click_url:
+          type: string
+      required: [id, kind, asset_url, click_url]
+
+    FeedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItemResponse'
+        next_cursor:
+          type: string
+      required: [items]
+
+    QuotaSnapshot:
+      type: object
+      properties:
+        likes_left:
+          type: integer
+        reset_at:
+          type: string
+          format: date-time
+        too_fast_retry_after:
+          type: integer
+          format: int64
+      required: [likes_left, reset_at]
+
+    SwipeRequest:
+      type: object
+      properties:
+        target_id:
+          type: integer
+          format: int64
+        action:
+          type: string
+          enum: [LIKE, SUPERLIKE, DISLIKE]
+      required: [target_id, action]
+
+    SwipeResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        match_created:
+          type: boolean
+        quota:
+          $ref: '#/components/schemas/QuotaSnapshot'
+      required: [ok, match_created, quota]
+
+    RewindResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        undone_action:
+          type: string
+        undone_target_id:
+          type: integer
+          format: int64
+        quota:
+          $ref: '#/components/schemas/QuotaSnapshot'
+      required: [ok, undone_action, undone_target_id, quota]
+
+    LikesIncomingPreview:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        liked_at:
+          type: string
+          format: date-time
+      required: [user_id, liked_at]
+
+    LikesIncomingProfile:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        age:
+          type: integer
+        city_id:
+          type: string
+        city:
+          type: string
+        liked_at:
+          type: string
+          format: date-time
+      required: [user_id, display_name, age, city_id, city, liked_at]
+
+    LikesIncomingResponse:
+      type: object
+      properties:
+        blurred:
+          type: boolean
+        total_count:
+          type: integer
+        preview:
+          type: array
+          items:
+            $ref: '#/components/schemas/LikesIncomingPreview'
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/LikesIncomingProfile'
+      required: [blurred, total_count, preview]
+
+    LikesRevealOneResponse:
+      type: object
+      properties:
+        profile:
+          $ref: '#/components/schemas/LikesIncomingProfile'
+      required: [profile]
+
+    MatchItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        target_user_id:
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        age:
+          type: integer
+        city_id:
+          type: string
+        city:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, target_user_id, display_name, age, city_id, city, created_at]
+
+    MatchesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchItem'
+      required: [items]
+
+    UnmatchRequest:
+      type: object
+      properties:
+        target_id:
+          type: integer
+          format: int64
+      required: [target_id]
+
+    BlockRequest:
+      type: object
+      properties:
+        target_id:
+          type: integer
+          format: int64
+        reason:
+          type: string
+      required: [target_id]
+
+    ReportRequest:
+      type: object
+      properties:
+        target_id:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        details:
+          type: string
+      required: [target_id, reason]
+
+    AdEventRequest:
+      type: object
+      properties:
+        ad_id:
+          type: integer
+          format: int64
+        meta:
+          type: object
+          additionalProperties: true
+      required: [ad_id]
+
+    PurchaseCreateRequest:
+      type: object
+      properties:
+        sku:
+          type: string
+          enum: [boost_30m, superlike_pack_3, reveal_1, incognito_24h, message_wo_match_1, plus_1m]
+        provider:
+          type: string
+      required: [sku, provider]
+
+    PurchaseCreateResponse:
+      type: object
+      properties:
+        purchase_id:
+          type: integer
+          format: int64
+        sku:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+      required: [purchase_id, sku, provider, status]
+
+    PurchaseWebhookRequest:
+      type: object
+      properties:
+        purchase_id:
+          type: integer
+          format: int64
+        provider:
+          type: string
+        provider_tx_id:
+          type: string
+        status:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+      required: [purchase_id, provider, provider_tx_id]
+
+    PurchaseWebhookResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        purchase_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        sku:
+          type: string
+        status:
+          type: string
+        idempotent:
+          type: boolean
+      required: [ok, purchase_id, user_id, sku, status, idempotent]
+
+    EntitlementsResponse:
+      type: object
+      properties:
+        is_plus:
+          type: boolean
+        plus_until:
+          type: string
+          format: date-time
+        boost_until:
+          type: string
+          format: date-time
+        superlike_credits:
+          type: integer
+        reveal_credits:
+          type: integer
+        message_wo_match_credits:
+          type: integer
+        like_tokens:
+          type: integer
+        incognito_until:
+          type: string
+          format: date-time
+      required: [is_plus, superlike_credits, reveal_credits, message_wo_match_credits, like_tokens]
+
+    EventBatchItem:
+      type: object
+      properties:
+        name:
+          type: string
+        ts:
+          type: integer
+          format: int64
+        props:
+          type: object
+          additionalProperties: true
+      required: [name, ts]
+
+    EventsBatchRequest:
+      type: array
+      items:
+        $ref: '#/components/schemas/EventBatchItem'
+
+    EventsBatchResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        accepted:
+          type: integer
+      required: [ok, accepted]
+
+    OKResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
