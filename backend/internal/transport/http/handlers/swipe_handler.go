@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
@@ -41,7 +42,25 @@ func (h *SwipeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Swipe(r.Context(), identity.UserID, req.TargetID, req.Action, timezoneFromRequest(r))
+	client := swipesvc.SwipeClientTelemetry{}
+	if req.Client != nil {
+		client = swipesvc.SwipeClientTelemetry{
+			CardViewMS:    req.Client.CardViewMS,
+			SwipeVelocity: req.Client.SwipeVelocity,
+			Screen:        req.Client.Screen,
+		}
+	}
+
+	result, err := h.service.Swipe(
+		r.Context(),
+		identity.UserID,
+		req.TargetID,
+		req.Action,
+		timezoneFromRequest(r),
+		identity.SID,
+		clientIPFromRequest(r),
+		client,
+	)
 	if err != nil {
 		switch {
 		case errors.Is(err, swipesvc.ErrValidation):
@@ -59,15 +78,21 @@ func (h *SwipeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 				Message: "daily likes limit reached",
 			})
 		default:
-			if tf, ok := likessvc.IsTooFast(err); ok {
-				httperrors.Write(w, http.StatusTooManyRequests, struct {
-					Code          string `json:"code"`
-					Message       string `json:"message"`
-					RetryAfterSec int64  `json:"retry_after_sec"`
-				}{
+			if cd, ok := swipesvc.IsCooldownActive(err); ok {
+				httperrors.Write(w, http.StatusTooManyRequests, httperrors.RateLimitError{
+					Code:          "COOLDOWN_ACTIVE",
+					Message:       "cooldown is active, try again later",
+					RetryAfterSec: cd.RetryAfter(),
+					CooldownUntil: cd.CooldownUntil,
+				})
+				return
+			}
+			if tf, ok := swipesvc.IsTooFast(err); ok {
+				httperrors.Write(w, http.StatusTooManyRequests, httperrors.RateLimitError{
 					Code:          "TOO_FAST",
 					Message:       "too many like actions, slow down",
 					RetryAfterSec: tf.RetryAfter(),
+					CooldownUntil: tf.CooldownUntil,
 				})
 				return
 			}
@@ -98,4 +123,24 @@ func timezoneFromRequest(r *http.Request) string {
 		return v
 	}
 	return ""
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if value := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); value != "" {
+		parts := strings.Split(value, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	if value := strings.TrimSpace(r.Header.Get("X-Real-IP")); value != "" {
+		return value
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }

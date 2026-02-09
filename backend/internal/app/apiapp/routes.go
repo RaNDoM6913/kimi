@@ -7,6 +7,7 @@ import (
 	"github.com/ivankudzin/tgapp/backend/internal/config"
 	adssvc "github.com/ivankudzin/tgapp/backend/internal/services/ads"
 	analyticsvc "github.com/ivankudzin/tgapp/backend/internal/services/analytics"
+	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 	authsvc "github.com/ivankudzin/tgapp/backend/internal/services/auth"
 	entsvc "github.com/ivankudzin/tgapp/backend/internal/services/entitlements"
 	feedsvc "github.com/ivankudzin/tgapp/backend/internal/services/feed"
@@ -23,6 +24,7 @@ import (
 
 type Dependencies struct {
 	AdsService         *adssvc.Service
+	AntiAbuseService   *antiabusesvc.Service
 	AnalyticsService   *analyticsvc.Service
 	EntitlementService *entsvc.Service
 	AuthService        *authsvc.Service
@@ -43,7 +45,7 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	adsHandler := handlers.NewAdsHandler(deps.AdsService)
 	authHandler := handlers.NewAuthHandler(deps.AuthService)
 	healthHandler := handlers.NewHealthHandler()
-	meHandler := handlers.NewMeHandler(deps.Config.Remote)
+	meHandler := handlers.NewMeHandler(deps.Config.Remote, deps.AntiAbuseService)
 	configHandler := handlers.NewConfigHandler(deps.Config.Remote)
 	locationHandler := handlers.NewLocationHandler(deps.GeoService)
 	profileHandler := handlers.NewProfileHandler(deps.ProfileService)

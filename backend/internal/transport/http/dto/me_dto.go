@@ -7,6 +7,7 @@ type MeResponse struct {
 	ModerationStatus string                  `json:"moderation_status"`
 	Entitlements     MeEntitlementsResponse  `json:"entitlements"`
 	Quota            MeQuotaSnapshotResponse `json:"quota"`
+	AntiAbuseState   MeAntiAbuseState        `json:"antiabuse_state"`
 }
 
 type MeUserPublicResponse struct {
@@ -31,4 +32,10 @@ type MeQuotaSnapshotResponse struct {
 	LikesLeft         int       `json:"likes_left"`
 	ResetAt           time.Time `json:"reset_at"`
 	TooFastRetryAfter *int64    `json:"too_fast_retry_after"`
+}
+
+type MeAntiAbuseState struct {
+	RiskScore     float64    `json:"risk_score"`
+	CooldownUntil *time.Time `json:"cooldown_until"`
+	ShadowEnabled *bool      `json:"shadow_enabled"`
 }

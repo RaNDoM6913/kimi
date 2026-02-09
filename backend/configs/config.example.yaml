@@ -41,6 +41,16 @@ remote:
     plus_rate_per_minute: 60
     plus_rate_per_10sec: 15
     plus_rewinds_per_day: 3
+  antiabuse:
+    like_max_per_sec: 2
+    like_max_10s: 12
+    like_max_min: 45
+    min_card_view_ms: 700
+    risk_decay_hours: 6
+    cooldown_steps_sec: [30, 60, 300, 1800, 86400]
+    shadow_threshold: 5
+    shadow_rank_multiplier: 0.4
+    suspect_like_threshold: 8
   ads_inject:
     free: 7
     plus: 37

@@ -65,12 +65,25 @@ type BotConfig struct {
 
 type RemoteConfig struct {
 	Limits     LimitsConfig     `yaml:"limits"`
+	AntiAbuse  AntiAbuseConfig  `yaml:"antiabuse"`
 	AdsInject  AdsInjectConfig  `yaml:"ads_inject"`
 	Filters    FiltersConfig    `yaml:"filters"`
 	GoalsMode  string           `yaml:"goals_mode"`
 	Boost      BoostConfig      `yaml:"boost"`
 	Cities     []CityConfig     `yaml:"cities"`
 	MeDefaults MeDefaultsConfig `yaml:"me_defaults"`
+}
+
+type AntiAbuseConfig struct {
+	LikeMaxPerSec        int     `yaml:"like_max_per_sec"`
+	LikeMax10Sec         int     `yaml:"like_max_10s"`
+	LikeMaxPerMin        int     `yaml:"like_max_min"`
+	MinCardViewMS        int     `yaml:"min_card_view_ms"`
+	RiskDecayHours       int     `yaml:"risk_decay_hours"`
+	CooldownStepsSec     []int   `yaml:"cooldown_steps_sec"`
+	ShadowThreshold      int     `yaml:"shadow_threshold"`
+	ShadowRankMultiplier float64 `yaml:"shadow_rank_multiplier"`
+	SuspectLikeThreshold int     `yaml:"suspect_like_threshold"`
 }
 
 type LimitsConfig struct {
@@ -164,6 +177,17 @@ func Default() Config {
 				PlusRatePerMinute:    60,
 				PlusRatePer10Seconds: 15,
 				PlusRewindsPerDay:    3,
+			},
+			AntiAbuse: AntiAbuseConfig{
+				LikeMaxPerSec:        2,
+				LikeMax10Sec:         12,
+				LikeMaxPerMin:        45,
+				MinCardViewMS:        700,
+				RiskDecayHours:       6,
+				CooldownStepsSec:     []int{30, 60, 300, 1800, 86400},
+				ShadowThreshold:      5,
+				ShadowRankMultiplier: 0.4,
+				SuspectLikeThreshold: 8,
 			},
 			AdsInject: AdsInjectConfig{
 				FreeEvery: 7,

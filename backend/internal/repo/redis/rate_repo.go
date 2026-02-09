@@ -16,6 +16,21 @@ func NewRateRepo(client *goredis.Client) *RateRepo {
 	return &RateRepo{client: client}
 }
 
+func (r *RateRepo) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	if r.client == nil {
+		return nil, fmt.Errorf("redis client is nil")
+	}
+	if script == "" {
+		return nil, fmt.Errorf("redis eval script is required")
+	}
+
+	result, err := r.client.Eval(ctx, script, keys, args...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis eval: %w", err)
+	}
+	return result, nil
+}
+
 func (r *RateRepo) IncrementWindow(ctx context.Context, key string, window time.Duration) (int64, time.Duration, error) {
 	if r.client == nil {
 		return 0, 0, fmt.Errorf("redis client is nil")

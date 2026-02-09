@@ -15,6 +15,8 @@ func TestLoadUsesDefaultsAndYAMLOverrides(t *testing.T) {
 remote:
   limits:
     free_likes_per_day: 99
+  antiabuse:
+    like_max_min: 66
   ads_inject:
     free: 11
   filters:
@@ -36,6 +38,9 @@ remote:
 
 	if cfg.Remote.Limits.FreeLikesPerDay != 99 {
 		t.Fatalf("unexpected free likes/day: %d", cfg.Remote.Limits.FreeLikesPerDay)
+	}
+	if cfg.Remote.AntiAbuse.LikeMaxPerMin != 66 {
+		t.Fatalf("unexpected antiabuse like_max_min: %d", cfg.Remote.AntiAbuse.LikeMaxPerMin)
 	}
 	if cfg.Remote.AdsInject.FreeEvery != 11 {
 		t.Fatalf("unexpected ads free inject: %d", cfg.Remote.AdsInject.FreeEvery)
@@ -59,6 +64,12 @@ remote:
 	if cfg.Remote.AdsInject.PlusEvery != 37 {
 		t.Fatalf("ads plus default should stay 37")
 	}
+	if cfg.Remote.AntiAbuse.LikeMaxPerSec != 2 {
+		t.Fatalf("antiabuse like_max_per_sec default should stay 2")
+	}
+	if cfg.Remote.AntiAbuse.ShadowRankMultiplier != 0.4 {
+		t.Fatalf("antiabuse shadow_rank_multiplier default should stay 0.4")
+	}
 }
 
 func TestLoadDefaultsWhenFileMissing(t *testing.T) {
@@ -77,6 +88,12 @@ func TestLoadDefaultsWhenFileMissing(t *testing.T) {
 	}
 	if cfg.Remote.Boost.Duration.String() != "30m0s" {
 		t.Fatalf("unexpected default boost duration: %s", cfg.Remote.Boost.Duration.String())
+	}
+	if cfg.Remote.AntiAbuse.SuspectLikeThreshold != 8 {
+		t.Fatalf("unexpected antiabuse suspect_like_threshold: %d", cfg.Remote.AntiAbuse.SuspectLikeThreshold)
+	}
+	if len(cfg.Remote.AntiAbuse.CooldownStepsSec) != 5 {
+		t.Fatalf("unexpected antiabuse cooldown steps length: %d", len(cfg.Remote.AntiAbuse.CooldownStepsSec))
 	}
 }
 

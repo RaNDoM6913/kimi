@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
+	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 )
 
 type feedRepoStub struct {
@@ -33,8 +34,19 @@ type feedPlusStoreStub struct {
 	isPlus bool
 }
 
+type feedAntiAbuseStub struct {
+	shadow map[int64]bool
+}
+
 func (s *feedPlusStoreStub) IsPlusActive(_ context.Context, _ int64, _ time.Time) (bool, *time.Time, error) {
 	return s.isPlus, nil, nil
+}
+
+func (s *feedAntiAbuseStub) GetState(_ context.Context, userID int64) (antiabusesvc.State, error) {
+	if s.shadow != nil && s.shadow[userID] {
+		return antiabusesvc.State{RiskScore: 5, ShadowEnabled: true, Exists: true}, nil
+	}
+	return antiabusesvc.State{RiskScore: 0, ShadowEnabled: false, Exists: true}, nil
 }
 
 func (s *feedRepoStub) GetViewerContext(_ context.Context, _ int64) (pgrepo.FeedViewerContext, error) {
@@ -196,5 +208,57 @@ func TestGetInjectsAdsByInterval(t *testing.T) {
 	}
 	if !result.Items[7].IsAd || result.Items[7].Ad == nil || result.Items[7].Ad.ID != 101 {
 		t.Fatalf("expected ad at index 7")
+	}
+}
+
+func TestGetDemotesShadowCandidatesButKeepsCursorOrder(t *testing.T) {
+	repo := &feedRepoStub{
+		viewer: pgrepo.FeedViewerContext{
+			UserID:     10,
+			CityID:     "minsk",
+			Gender:     "male",
+			LookingFor: "female",
+			AgeMin:     18,
+			AgeMax:     30,
+			RadiusKM:   3,
+			Goals:      []string{"relationship"},
+		},
+		items: []pgrepo.FeedCandidate{
+			{UserID: 301, DisplayName: "shadow-first", CityID: "minsk", City: "Minsk", Age: 25, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 12, 0, 0, 0, time.UTC)},
+			{UserID: 300, DisplayName: "normal-second", CityID: "minsk", City: "Minsk", Age: 24, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 59, 0, 0, time.UTC)},
+		},
+	}
+
+	service := NewService(repo, Config{
+		DefaultAgeMin:   18,
+		DefaultAgeMax:   30,
+		DefaultRadiusKM: 3,
+		MaxRadiusKM:     50,
+	})
+	service.AttachAntiAbuse(&feedAntiAbuseStub{
+		shadow: map[int64]bool{
+			301: true,
+		},
+	}, 0.4)
+
+	result, err := service.Get(context.Background(), 10, "", 2)
+	if err != nil {
+		t.Fatalf("get feed with shadow demotion: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("unexpected items count: got %d want %d", len(result.Items), 2)
+	}
+	if result.Items[0].UserID != 300 || result.Items[1].UserID != 301 {
+		t.Fatalf("unexpected order after shadow demotion: got [%d,%d] want [300,301]", result.Items[0].UserID, result.Items[1].UserID)
+	}
+	if result.NextCursor == "" {
+		t.Fatalf("expected next cursor")
+	}
+
+	if _, err := service.Get(context.Background(), 10, result.NextCursor, 2); err != nil {
+		t.Fatalf("get feed with demoted cursor: %v", err)
+	}
+	if repo.lastQuery.CursorUserID != 300 {
+		t.Fatalf("cursor must follow base SQL order, got %d want %d", repo.lastQuery.CursorUserID, 300)
 	}
 }

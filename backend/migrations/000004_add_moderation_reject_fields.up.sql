@@ -1,0 +1,3 @@
+ALTER TABLE moderation_items
+    ADD COLUMN IF NOT EXISTS reason_code TEXT NULL,
+    ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ NULL;

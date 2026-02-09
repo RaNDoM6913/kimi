@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
+	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 )
 
 const (
@@ -35,11 +36,16 @@ type PlusStore interface {
 	IsPlusActive(ctx context.Context, userID int64, at time.Time) (bool, *time.Time, error)
 }
 
+type AntiAbuseStore interface {
+	GetState(ctx context.Context, userID int64) (antiabusesvc.State, error)
+}
+
 type Config struct {
-	DefaultAgeMin   int
-	DefaultAgeMax   int
-	DefaultRadiusKM int
-	MaxRadiusKM     int
+	DefaultAgeMin        int
+	DefaultAgeMax        int
+	DefaultRadiusKM      int
+	MaxRadiusKM          int
+	ShadowRankMultiplier float64
 }
 
 type AdsConfig struct {
@@ -53,6 +59,7 @@ type Service struct {
 	cfg       Config
 	adStore   AdStore
 	plusStore PlusStore
+	antiAbuse AntiAbuseStore
 	adsCfg    AdsConfig
 	now       func() time.Time
 }
@@ -100,11 +107,21 @@ func NewService(repo Repository, cfg Config) *Service {
 	if cfg.MaxRadiusKM <= 0 {
 		cfg.MaxRadiusKM = 50
 	}
+	if cfg.ShadowRankMultiplier <= 0 || cfg.ShadowRankMultiplier > 1 {
+		cfg.ShadowRankMultiplier = 0.4
+	}
 
 	return &Service{
 		repo: repo,
 		cfg:  cfg,
 		now:  time.Now,
+	}
+}
+
+func (s *Service) AttachAntiAbuse(antiAbuse AntiAbuseStore, shadowRankMultiplier float64) {
+	s.antiAbuse = antiAbuse
+	if shadowRankMultiplier > 0 && shadowRankMultiplier <= 1 {
+		s.cfg.ShadowRankMultiplier = shadowRankMultiplier
 	}
 }
 
@@ -179,6 +196,8 @@ func (s *Service) Get(ctx context.Context, userID int64, cursor string, limit in
 	if err != nil {
 		return Result{}, err
 	}
+	cursorCandidates := candidates
+	candidates = s.demoteShadowCandidates(ctx, candidates)
 
 	items := make([]Item, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -195,8 +214,8 @@ func (s *Service) Get(ctx context.Context, userID int64, cursor string, limit in
 	items = s.injectAds(ctx, userID, viewer.CityID, items)
 
 	result := Result{Items: items}
-	if len(candidates) == limit {
-		last := candidates[len(candidates)-1]
+	if len(cursorCandidates) == limit {
+		last := cursorCandidates[len(cursorCandidates)-1]
 		next, err := encodeCursor(pageCursor{
 			Priority:  last.GoalsPriority,
 			CreatedAt: last.CreatedAt.UTC().UnixMilli(),
@@ -307,6 +326,28 @@ func normalizeRadius(radius, fallback, max int) int {
 		radius = max
 	}
 	return radius
+}
+
+func (s *Service) demoteShadowCandidates(ctx context.Context, candidates []pgrepo.FeedCandidate) []pgrepo.FeedCandidate {
+	if len(candidates) == 0 || s.antiAbuse == nil {
+		return candidates
+	}
+
+	normal := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	shadow := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		state, err := s.antiAbuse.GetState(ctx, candidate.UserID)
+		if err == nil && state.ShadowEnabled {
+			shadow = append(shadow, candidate)
+			continue
+		}
+		normal = append(normal, candidate)
+	}
+
+	out := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	out = append(out, normal...)
+	out = append(out, shadow...)
+	return out
 }
 
 func decodeCursor(raw string) (pageCursor, bool, error) {

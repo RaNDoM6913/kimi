@@ -239,7 +239,7 @@ func (a *App) handleCommand(ctx context.Context, update tginfra.CommandUpdate) e
 
 	switch strings.ToLower(strings.TrimSpace(update.Command)) {
 	case "queue":
-		return a.sendNextQueueItem(ctx, update.ChatID)
+		return a.sendNextQueueItem(ctx, update.ChatID, update.UserID)
 	default:
 		return nil
 	}
@@ -327,12 +327,12 @@ func (a *App) handleText(ctx context.Context, update tginfra.TextUpdate) error {
 	return a.bot.SendText(ctx, update.ChatID, "Анкета отклонена.")
 }
 
-func (a *App) sendNextQueueItem(ctx context.Context, chatID int64) error {
+func (a *App) sendNextQueueItem(ctx context.Context, chatID int64, actorTGID int64) error {
 	if a.bot == nil {
 		return nil
 	}
 
-	item, err := a.moderationService.GetNextQueueItem(ctx)
+	item, err := a.moderationService.GetNextQueueItem(ctx, actorTGID)
 	if err != nil {
 		if errors.Is(err, modsvc.ErrQueueEmpty) {
 			return a.bot.SendText(ctx, chatID, queueEmptyInstruction)

@@ -18,6 +18,7 @@ import (
 	redrepo "github.com/ivankudzin/tgapp/backend/internal/repo/redis"
 	adssvc "github.com/ivankudzin/tgapp/backend/internal/services/ads"
 	analyticsvc "github.com/ivankudzin/tgapp/backend/internal/services/analytics"
+	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 	authsvc "github.com/ivankudzin/tgapp/backend/internal/services/auth"
 	entsvc "github.com/ivankudzin/tgapp/backend/internal/services/entitlements"
 	feedsvc "github.com/ivankudzin/tgapp/backend/internal/services/feed"
@@ -60,6 +61,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	redisClient := redrepo.NewClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	sessionRepo := redrepo.NewSessionRepo(redisClient)
 	rateRepo := redrepo.NewRateRepo(redisClient)
+	riskRepo := redrepo.NewRiskRepo(redisClient)
 	adRepo := pgrepo.NewAdRepo(pool)
 	feedRepo := pgrepo.NewFeedRepo(pool)
 	swipeRepo := pgrepo.NewSwipeRepo(pool)
@@ -78,10 +80,11 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	authService := authsvc.NewService(jwtManager, sessionRepo, cfg.Auth.RefreshTTL)
 	geoService := geosvc.NewService(cfg.Remote.Cities, profileRepo)
 	feedService := feedsvc.NewService(feedRepo, feedsvc.Config{
-		DefaultAgeMin:   cfg.Remote.Filters.AgeMin,
-		DefaultAgeMax:   cfg.Remote.Filters.AgeMax,
-		DefaultRadiusKM: cfg.Remote.Filters.RadiusDefaultKM,
-		MaxRadiusKM:     cfg.Remote.Filters.RadiusMaxKM,
+		DefaultAgeMin:        cfg.Remote.Filters.AgeMin,
+		DefaultAgeMax:        cfg.Remote.Filters.AgeMax,
+		DefaultRadiusKM:      cfg.Remote.Filters.RadiusDefaultKM,
+		MaxRadiusKM:          cfg.Remote.Filters.RadiusMaxKM,
+		ShadowRankMultiplier: cfg.Remote.AntiAbuse.ShadowRankMultiplier,
 	})
 	feedService.AttachAds(adRepo, entitlementRepo, feedsvc.AdsConfig{
 		FreeEvery:     cfg.Remote.AdsInject.FreeEvery,
@@ -96,14 +99,22 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		Purchases:    purchaseRepo,
 		Entitlements: entitlementRepo,
 	})
+	antiAbuseService := antiabusesvc.NewService(riskRepo, antiabusesvc.Config{
+		RiskDecayHours:   cfg.Remote.AntiAbuse.RiskDecayHours,
+		CooldownStepsSec: cfg.Remote.AntiAbuse.CooldownStepsSec,
+		ShadowThreshold:  cfg.Remote.AntiAbuse.ShadowThreshold,
+	})
 	analyticsService := analyticsvc.NewService(eventRepo, analyticsvc.Config{
 		MaxBatchSize: 100,
 	})
+	antiAbuseService.AttachTelemetry(analyticsService)
+	feedService.AttachAntiAbuse(antiAbuseService, cfg.Remote.AntiAbuse.ShadowRankMultiplier)
 	profileService := profilesvc.NewService(profileRepo)
 	rateLimiter := ratesvc.NewLimiter(
 		rateRepo,
-		cfg.Remote.Limits.PlusRatePerMinute,
-		cfg.Remote.Limits.PlusRatePer10Seconds,
+		cfg.Remote.AntiAbuse.LikeMaxPerSec,
+		cfg.Remote.AntiAbuse.LikeMax10Sec,
+		cfg.Remote.AntiAbuse.LikeMaxPerMin,
 	)
 	likeService := likessvc.NewService(quotaRepo, entitlementRepo, rateLimiter, likessvc.Config{
 		FreeLikesPerDay: cfg.Remote.Limits.FreeLikesPerDay,
@@ -127,12 +138,16 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		Entitlements: entitlementRepo,
 		RateLimiter:  rateLimiter,
 		QuotaView:    likeService,
+		AntiAbuse:    antiAbuseService,
+		Telemetry:    analyticsService,
 	}, swipesvc.Config{
-		FreeLikesPerDay:   cfg.Remote.Limits.FreeLikesPerDay,
-		FreeRewindsPerDay: 1,
-		PlusRewindsPerDay: cfg.Remote.Limits.PlusRewindsPerDay,
-		DefaultTimezone:   cfg.Remote.MeDefaults.Timezone,
-		DefaultIsPlus:     cfg.Remote.MeDefaults.IsPlus,
+		FreeLikesPerDay:      cfg.Remote.Limits.FreeLikesPerDay,
+		FreeRewindsPerDay:    1,
+		PlusRewindsPerDay:    cfg.Remote.Limits.PlusRewindsPerDay,
+		DefaultTimezone:      cfg.Remote.MeDefaults.Timezone,
+		DefaultIsPlus:        cfg.Remote.MeDefaults.IsPlus,
+		MinCardViewMS:        cfg.Remote.AntiAbuse.MinCardViewMS,
+		SuspectLikeThreshold: cfg.Remote.AntiAbuse.SuspectLikeThreshold,
 	})
 
 	server := &http.Server{
@@ -161,6 +176,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 
 	RegisterRoutes(r, Dependencies{
 		AdsService:         adsService,
+		AntiAbuseService:   antiAbuseService,
 		AnalyticsService:   analyticsService,
 		EntitlementService: entitlementService,
 		AuthService:        authService,

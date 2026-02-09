@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tgapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  bot:
+    image: golang:1.22-alpine
+    working_dir: /app
+    command: sh -c "go run ./cmd/bot"
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  pgdata:

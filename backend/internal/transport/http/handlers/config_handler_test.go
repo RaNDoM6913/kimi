@@ -27,6 +27,7 @@ func TestConfigHandlerResponseShape(t *testing.T) {
 	}
 
 	requireObjectKey(t, raw, "limits")
+	requireObjectKey(t, raw, "antiabuse")
 	requireObjectKey(t, raw, "ads_inject")
 	requireObjectKey(t, raw, "filters")
 	requireObjectKey(t, raw, "goals_mode")
@@ -46,6 +47,15 @@ func TestConfigHandlerResponseShape(t *testing.T) {
 	rate := plus["rate_limits"].(map[string]interface{})
 	if int(rate["per_minute"].(float64)) <= 0 || int(rate["per_10sec"].(float64)) <= 0 {
 		t.Fatalf("unexpected plus.rate_limits: %+v", rate)
+	}
+
+	antiabuse := raw["antiabuse"].(map[string]interface{})
+	if int(antiabuse["like_max_per_sec"].(float64)) != 2 {
+		t.Fatalf("unexpected antiabuse.like_max_per_sec: %v", antiabuse["like_max_per_sec"])
+	}
+	steps := antiabuse["cooldown_steps_sec"].([]interface{})
+	if len(steps) == 0 {
+		t.Fatalf("unexpected antiabuse.cooldown_steps_sec: %v", antiabuse["cooldown_steps_sec"])
 	}
 
 	boost := raw["boost"].(map[string]interface{})

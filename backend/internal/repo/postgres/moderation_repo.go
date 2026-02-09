@@ -24,6 +24,9 @@ type ModerationItemRecord struct {
 	ReasonText      *string
 	RequiredFixStep *string
 	ETABucket       string
+	LockedByTGID    *int64
+	LockedUntil     *time.Time
+	LockedAt        *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -96,6 +99,77 @@ WHERE UPPER(status) = 'PENDING'
 	return count, nil
 }
 
+func (r *ModerationRepo) AcquireNextPending(ctx context.Context, actorTGID int64, lockDuration time.Duration) (ModerationItemRecord, error) {
+	if r.pool == nil {
+		return ModerationItemRecord{}, fmt.Errorf("postgres pool is nil")
+	}
+	if actorTGID == 0 {
+		return ModerationItemRecord{}, fmt.Errorf("invalid actor tg id")
+	}
+	if lockDuration <= 0 {
+		lockDuration = 10 * time.Minute
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return ModerationItemRecord{}, fmt.Errorf("begin acquire transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	seconds := int64(lockDuration / time.Second)
+	if seconds <= 0 {
+		seconds = int64((10 * time.Minute) / time.Second)
+	}
+
+	item := ModerationItemRecord{}
+	err = tx.QueryRow(ctx, `
+WITH candidate AS (
+	SELECT id
+	FROM moderation_items
+	WHERE UPPER(status) = 'PENDING'
+	  AND (locked_until IS NULL OR locked_until < NOW())
+	ORDER BY created_at ASC, id ASC
+	FOR UPDATE SKIP LOCKED
+	LIMIT 1
+)
+UPDATE moderation_items mi
+SET
+	locked_by_tg_id = $1,
+	locked_at = NOW(),
+	locked_until = NOW() + make_interval(secs => $2),
+	updated_at = NOW()
+FROM candidate
+WHERE mi.id = candidate.id
+RETURNING mi.id, mi.user_id, mi.status, mi.reason_text, mi.required_fix_step, mi.eta_bucket, mi.locked_by_tg_id, mi.locked_until, mi.locked_at, mi.created_at, mi.updated_at
+`, actorTGID, seconds).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.Status,
+		&item.ReasonText,
+		&item.RequiredFixStep,
+		&item.ETABucket,
+		&item.LockedByTGID,
+		&item.LockedUntil,
+		&item.LockedAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ModerationItemRecord{}, ErrModerationItemNotFound
+		}
+		return ModerationItemRecord{}, fmt.Errorf("acquire next pending moderation item: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return ModerationItemRecord{}, fmt.Errorf("commit acquire transaction: %w", err)
+	}
+
+	return item, nil
+}
+
 func (r *ModerationRepo) GetNextPending(ctx context.Context) (ModerationItemRecord, error) {
 	if r.pool == nil {
 		return ModerationItemRecord{}, fmt.Errorf("postgres pool is nil")
@@ -105,6 +179,7 @@ func (r *ModerationRepo) GetNextPending(ctx context.Context) (ModerationItemReco
 SELECT id, user_id, status, reason_text, required_fix_step, eta_bucket, created_at, updated_at
 FROM moderation_items
 WHERE UPPER(status) = 'PENDING'
+  AND (locked_until IS NULL OR locked_until < NOW())
 ORDER BY created_at ASC, id ASC
 LIMIT 1
 `)
@@ -170,6 +245,9 @@ SET
 	moderator_tg_id = $2,
 	reason_text = NULL,
 	required_fix_step = NULL,
+	locked_by_tg_id = NULL,
+	locked_until = NOW(),
+	decided_at = NOW(),
 	eta_bucket = COALESCE(NULLIF($3, ''), eta_bucket),
 	updated_at = NOW()
 WHERE id = $1
@@ -193,8 +271,12 @@ UPDATE moderation_items
 SET
 	status = 'REJECTED',
 	moderator_tg_id = $2,
+	reason_code = NULL,
 	reason_text = $3,
 	required_fix_step = $4,
+	locked_by_tg_id = NULL,
+	locked_until = NOW(),
+	decided_at = NOW(),
 	eta_bucket = COALESCE(NULLIF($5, ''), eta_bucket),
 	updated_at = NOW()
 WHERE id = $1

@@ -11,6 +11,7 @@ import (
 )
 
 const signedURLTTL = 5 * time.Minute
+const queueLockTTL = 10 * time.Minute
 
 var ErrQueueEmpty = errors.New("moderation queue is empty")
 
@@ -112,12 +113,15 @@ func (s *Service) GetUserStatus(ctx context.Context, userID int64) (UserStatus, 
 	}, nil
 }
 
-func (s *Service) GetNextQueueItem(ctx context.Context) (QueueItem, error) {
+func (s *Service) GetNextQueueItem(ctx context.Context, actorTGID int64) (QueueItem, error) {
 	if s.moderationRepo == nil || s.profileRepo == nil || s.mediaRepo == nil {
 		return QueueItem{}, fmt.Errorf("moderation service dependencies are not configured")
 	}
+	if actorTGID == 0 {
+		return QueueItem{}, fmt.Errorf("invalid actor tg id")
+	}
 
-	item, err := s.moderationRepo.GetNextPending(ctx)
+	item, err := s.moderationRepo.AcquireNextPending(ctx, actorTGID, queueLockTTL)
 	if err != nil {
 		if errors.Is(err, pgrepo.ErrModerationItemNotFound) {
 			return QueueItem{}, ErrQueueEmpty

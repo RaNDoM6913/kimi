@@ -36,6 +36,17 @@ func (h *ConfigHandler) Handle(w http.ResponseWriter, _ *http.Request) {
 				RewindPerDay: h.remote.Limits.PlusRewindsPerDay,
 			},
 		},
+		AntiAbuse: dto.ConfigAntiAbuse{
+			LikeMaxPerSec:        h.remote.AntiAbuse.LikeMaxPerSec,
+			LikeMax10Sec:         h.remote.AntiAbuse.LikeMax10Sec,
+			LikeMaxPerMin:        h.remote.AntiAbuse.LikeMaxPerMin,
+			MinCardViewMS:        h.remote.AntiAbuse.MinCardViewMS,
+			RiskDecayHours:       h.remote.AntiAbuse.RiskDecayHours,
+			CooldownStepsSec:     h.remote.AntiAbuse.CooldownStepsSec,
+			ShadowThreshold:      h.remote.AntiAbuse.ShadowThreshold,
+			ShadowRankMultiplier: h.remote.AntiAbuse.ShadowRankMultiplier,
+			SuspectLikeThreshold: h.remote.AntiAbuse.SuspectLikeThreshold,
+		},
 		AdsInject: dto.ConfigAdsInject{
 			Free: h.remote.AdsInject.FreeEvery,
 			Plus: h.remote.AdsInject.PlusEvery,

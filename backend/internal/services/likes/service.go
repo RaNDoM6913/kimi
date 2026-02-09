@@ -174,10 +174,10 @@ func (s *Service) GetSnapshot(ctx context.Context, userID int64, timezone string
 		snapshot.LikesLeft = left
 	}
 
-	if isPlus && s.rateLimiter != nil {
+	if s.rateLimiter != nil {
 		retryAfter, err := s.rateLimiter.RetryAfterLike(ctx, userID)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("read plus rate limiter state: %w", err)
+			return Snapshot{}, fmt.Errorf("read like rate limiter state: %w", err)
 		}
 		if retryAfter > 0 {
 			v := retryAfter
@@ -205,14 +205,17 @@ func (s *Service) ConsumeLike(ctx context.Context, userID int64, timezone string
 		return Snapshot{}, err
 	}
 
-	if isPlus && s.rateLimiter != nil {
+	if s.rateLimiter != nil {
 		retryAfter, allowed, err := s.rateLimiter.AllowLike(ctx, userID)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("consume plus rate limit: %w", err)
+			return Snapshot{}, fmt.Errorf("consume like rate limit: %w", err)
 		}
 		if !allowed {
 			return Snapshot{}, TooFastError{RetryAfterSec: retryAfter}
 		}
+	}
+
+	if isPlus {
 		return Snapshot{
 			LikesLeft: -1,
 			ResetAt:   resetAt,

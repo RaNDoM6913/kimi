@@ -6,20 +6,23 @@ import (
 	"time"
 
 	"github.com/ivankudzin/tgapp/backend/internal/config"
+	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 	authsvc "github.com/ivankudzin/tgapp/backend/internal/services/auth"
 	"github.com/ivankudzin/tgapp/backend/internal/transport/http/dto"
 	httperrors "github.com/ivankudzin/tgapp/backend/internal/transport/http/errors"
 )
 
 type MeHandler struct {
-	remote config.RemoteConfig
-	now    func() time.Time
+	remote    config.RemoteConfig
+	antiabuse *antiabusesvc.Service
+	now       func() time.Time
 }
 
-func NewMeHandler(remote config.RemoteConfig) *MeHandler {
+func NewMeHandler(remote config.RemoteConfig, antiabuse *antiabusesvc.Service) *MeHandler {
 	return &MeHandler{
-		remote: remote,
-		now:    time.Now,
+		remote:    remote,
+		antiabuse: antiabuse,
+		now:       time.Now,
 	}
 }
 
@@ -67,6 +70,23 @@ func (h *MeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		username = fmt.Sprintf("u%d", identity.UserID)
 	}
 
+	antiAbuseState := dto.MeAntiAbuseState{
+		RiskScore:     0,
+		CooldownUntil: nil,
+		ShadowEnabled: nil,
+	}
+	if h.antiabuse != nil {
+		state, err := h.antiabuse.ApplyDecay(r.Context(), identity.UserID, now)
+		if err == nil {
+			antiAbuseState.RiskScore = float64(state.RiskScore)
+			antiAbuseState.CooldownUntil = state.CooldownUntil
+			if state.Exists {
+				v := state.ShadowEnabled
+				antiAbuseState.ShadowEnabled = &v
+			}
+		}
+	}
+
 	httperrors.Write(w, http.StatusOK, dto.MeResponse{
 		User: dto.MeUserPublicResponse{
 			ID:        identity.UserID,
@@ -90,6 +110,7 @@ func (h *MeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			ResetAt:           resetAt,
 			TooFastRetryAfter: tooFast,
 		},
+		AntiAbuseState: antiAbuseState,
 	})
 }
 

@@ -7,5 +7,6 @@ type Like struct {
 	FromUserID  int64     `json:"from_user_id"`
 	ToUserID    int64     `json:"to_user_id"`
 	IsSuperLike bool      `json:"is_super_like"`
+	IsSuspect   bool      `json:"is_suspect"`
 	CreatedAt   time.Time `json:"created_at"`
 }

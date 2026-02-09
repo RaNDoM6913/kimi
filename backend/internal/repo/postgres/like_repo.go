@@ -29,7 +29,7 @@ type IncomingLikeRecord struct {
 	LikedAt     time.Time
 }
 
-func (r *LikeRepo) Upsert(ctx context.Context, tx pgx.Tx, fromUserID, toUserID int64, isSuperLike bool) error {
+func (r *LikeRepo) Upsert(ctx context.Context, tx pgx.Tx, fromUserID, toUserID int64, isSuperLike, isSuspect bool) error {
 	if fromUserID <= 0 || toUserID <= 0 {
 		return fmt.Errorf("invalid like payload")
 	}
@@ -42,12 +42,14 @@ INSERT INTO likes (
 	from_user_id,
 	to_user_id,
 	is_super_like,
+	is_suspect,
 	created_at
-) VALUES ($1, $2, $3, NOW())
+) VALUES ($1, $2, $3, $4, NOW())
 ON CONFLICT (from_user_id, to_user_id) DO UPDATE SET
 	is_super_like = likes.is_super_like OR EXCLUDED.is_super_like,
+	is_suspect = likes.is_suspect OR EXCLUDED.is_suspect,
 	created_at = NOW()
-`, fromUserID, toUserID, isSuperLike); err != nil {
+`, fromUserID, toUserID, isSuperLike, isSuspect); err != nil {
 		return fmt.Errorf("upsert like: %w", err)
 	}
 
