@@ -21,6 +21,7 @@ local weight = tonumber(ARGV[1])
 local now = tonumber(ARGV[2])
 local decay_sec = tonumber(ARGV[3])
 local steps_count = tonumber(ARGV[4])
+local forced_step = tonumber(ARGV[5 + steps_count])
 
 if weight == nil or weight < 1 then
 	weight = 1
@@ -54,7 +55,9 @@ end
 risk = risk + weight
 
 local step = 0
-if steps_count > 0 then
+if forced_step ~= nil and forced_step >= 0 then
+	step = forced_step
+elseif steps_count > 0 then
 	local idx = risk
 	if idx < 1 then
 		idx = 1
@@ -184,6 +187,17 @@ func (s *Service) GetState(ctx context.Context, userID int64) (State, error) {
 }
 
 func (s *Service) ApplyViolation(ctx context.Context, userID int64, weight int, now time.Time) (State, error) {
+	return s.applyViolation(ctx, userID, weight, nil, now)
+}
+
+func (s *Service) ApplyViolationWithCooldown(ctx context.Context, userID int64, weight int, cooldownSec int, now time.Time) (State, error) {
+	if cooldownSec < 0 {
+		cooldownSec = 0
+	}
+	return s.applyViolation(ctx, userID, weight, &cooldownSec, now)
+}
+
+func (s *Service) applyViolation(ctx context.Context, userID int64, weight int, cooldownSec *int, now time.Time) (State, error) {
 	if userID <= 0 {
 		return State{}, ErrValidation
 	}
@@ -210,6 +224,14 @@ func (s *Service) ApplyViolation(ctx context.Context, userID int64, weight int, 
 		}
 		args = append(args, step)
 	}
+	forcedStep := -1
+	if cooldownSec != nil {
+		forcedStep = *cooldownSec
+		if forcedStep < 0 {
+			forcedStep = 0
+		}
+	}
+	args = append(args, forcedStep)
 
 	wasShadow := false
 	if prev, err := s.store.Get(ctx, userID); err == nil {

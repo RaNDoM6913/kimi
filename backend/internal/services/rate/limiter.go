@@ -3,6 +3,7 @@ package rate
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,11 @@ const (
 	likes1SecWindow   = time.Second
 	likes10SecWindow  = 10 * time.Second
 	likesMinuteWindow = time.Minute
+)
+
+const (
+	ReasonTempUnavailable        = "temp_unavailable"
+	tempUnavailableRetryAfterSec = 10
 )
 
 const likeRateCheckScript = `
@@ -59,6 +65,21 @@ end
 
 _, retry, blocked = hit(KEYS[4], tonumber(ARGV[7]), tonumber(ARGV[8]))
 if blocked then
+	return {0, retry, "device_1s"}
+end
+
+_, retry, blocked = hit(KEYS[5], tonumber(ARGV[9]), tonumber(ARGV[10]))
+if blocked then
+	return {0, retry, "device_10s"}
+end
+
+_, retry, blocked = hit(KEYS[6], tonumber(ARGV[11]), tonumber(ARGV[12]))
+if blocked then
+	return {0, retry, "device_1m"}
+end
+
+_, retry, blocked = hit(KEYS[7], tonumber(ARGV[13]), tonumber(ARGV[14]))
+if blocked then
 	return {0, retry, "sid_1m"}
 end
 
@@ -75,6 +96,9 @@ type Limiter struct {
 	perSec       int
 	per10Sec     int
 	perMinute    int
+	devicePerSec int
+	devicePer10  int
+	devicePerMin int
 	sidPerMinute int
 }
 
@@ -94,13 +118,16 @@ func NewLimiter(store Store, perSec, per10Sec, perMinute int) *Limiter {
 		perSec:       perSec,
 		per10Sec:     per10Sec,
 		perMinute:    perMinute,
+		devicePerSec: perSec,
+		devicePer10:  per10Sec,
+		devicePerMin: perMinute,
 		sidPerMinute: perMinute,
 	}
 }
 
 // CheckLikeRate checks LIKE+SUPERLIKE anti-abuse windows.
 // Returns allowed=false with retry_after and reason when blocked.
-func (l *Limiter) CheckLikeRate(ctx context.Context, userID int64, sid, ip string) (bool, int, string) {
+func (l *Limiter) CheckLikeRate(ctx context.Context, userID int64, sid, ip, deviceID string) (bool, int, string) {
 	if userID <= 0 || l.store == nil {
 		return false, 1, "invalid_input"
 	}
@@ -112,6 +139,16 @@ func (l *Limiter) CheckLikeRate(ctx context.Context, userID int64, sid, ip strin
 		sidLimit = 0
 		normalizedSID = "_"
 	}
+	devicePerSec := l.devicePerSec
+	devicePer10 := l.devicePer10
+	devicePerMin := l.devicePerMin
+	normalizedDeviceID := strings.TrimSpace(deviceID)
+	if normalizedDeviceID == "" {
+		devicePerSec = 0
+		devicePer10 = 0
+		devicePerMin = 0
+		normalizedDeviceID = "_"
+	}
 
 	result, err := l.store.Eval(
 		ctx,
@@ -120,6 +157,9 @@ func (l *Limiter) CheckLikeRate(ctx context.Context, userID int64, sid, ip strin
 			user1SecKey(userID),
 			user10SecKey(userID),
 			userMinuteKey(userID),
+			device1SecKey(normalizedDeviceID),
+			device10SecKey(normalizedDeviceID),
+			deviceMinuteKey(normalizedDeviceID),
 			sidMinuteKey(normalizedSID),
 		},
 		l.perSec,
@@ -128,17 +168,24 @@ func (l *Limiter) CheckLikeRate(ctx context.Context, userID int64, sid, ip strin
 		int64(likes10SecWindow/time.Millisecond),
 		l.perMinute,
 		int64(likesMinuteWindow/time.Millisecond),
+		devicePerSec,
+		int64(likes1SecWindow/time.Millisecond),
+		devicePer10,
+		int64(likes10SecWindow/time.Millisecond),
+		devicePerMin,
+		int64(likesMinuteWindow/time.Millisecond),
 		sidLimit,
 		int64(likesMinuteWindow/time.Millisecond),
 	)
 	if err != nil {
-		// Fail-open on Redis errors to avoid hard outage.
-		return true, 0, ""
+		log.Printf("warning: like rate limiter redis unavailable: %v", err)
+		return false, tempUnavailableRetryAfterSec, ReasonTempUnavailable
 	}
 
 	allowed, retryAfter, reason, ok := parseCheckResult(result)
 	if !ok {
-		return true, 0, ""
+		log.Printf("warning: like rate limiter invalid redis response: %T", result)
+		return false, tempUnavailableRetryAfterSec, ReasonTempUnavailable
 	}
 	return allowed, retryAfter, reason
 }
@@ -152,7 +199,7 @@ func (l *Limiter) AllowLike(ctx context.Context, userID int64) (int64, bool, err
 		return 0, false, fmt.Errorf("rate limiter store is nil")
 	}
 
-	allowed, retryAfter, _ := l.CheckLikeRate(ctx, userID, "", "")
+	allowed, retryAfter, _ := l.CheckLikeRate(ctx, userID, "", "", "")
 	if !allowed {
 		return int64(retryAfter), false, nil
 	}
@@ -212,6 +259,18 @@ func user10SecKey(userID int64) string {
 
 func userMinuteKey(userID int64) string {
 	return "rl:like:user:" + strconv.FormatInt(userID, 10) + ":1m"
+}
+
+func device1SecKey(deviceID string) string {
+	return "rl:like:device:" + deviceID + ":1s"
+}
+
+func device10SecKey(deviceID string) string {
+	return "rl:like:device:" + deviceID + ":10s"
+}
+
+func deviceMinuteKey(deviceID string) string {
+	return "rl:like:device:" + deviceID + ":1m"
 }
 
 func sidMinuteKey(sid string) string {

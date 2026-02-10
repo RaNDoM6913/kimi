@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"bot_moderator/internal/config"
 	s3infra "bot_moderator/internal/infra/s3"
 	"bot_moderator/internal/infra/telegram"
+	"bot_moderator/internal/repo/adminhttp"
+	"bot_moderator/internal/repo/dualrepo"
 	"bot_moderator/internal/repo/postgres"
 	"bot_moderator/internal/services/access"
 	"bot_moderator/internal/services/audit"
@@ -52,6 +55,8 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		logger = slog.Default()
 	}
 
+	adminMode := normalizeAdminMode(cfg.AdminMode)
+
 	db, err := postgres.Open(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		logger.Warn("postgres unavailable, continuing without database", "error", err)
@@ -61,6 +66,64 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	botUsersRepo := postgres.NewBotUsersRepo(db)
 	botRolesRepo := postgres.NewBotRolesRepo(db)
 	moderationRepo := postgres.NewModerationRepo(db)
+	usersLookupRepo := postgres.NewUsersLookupRepo(db)
+	bansRepo := postgres.NewBansRepo(db)
+	auditRepo := postgres.NewAuditRepo(db)
+	exportsRepo := postgres.NewExportsQueueRepo(db)
+	workStatsRepo := postgres.NewWorkStatsRepo(db)
+	systemRepo := postgres.NewSystemRepo(db)
+
+	useHTTPRepos := adminMode == "http" || adminMode == "dual"
+	dualFallback := adminMode == "dual"
+
+	var adminHTTPClient *adminhttp.Client
+	if useHTTPRepos {
+		if !cfg.IsHTTPEnabled() {
+			if adminMode == "http" {
+				return nil, fmt.Errorf("admin http mode requires ADMIN_API_URL and ADMIN_BOT_TOKEN")
+			}
+			useHTTPRepos = false
+			dualFallback = false
+			logger.Info("admin http disabled by config, using db repositories")
+		} else {
+			adminHTTPClient, err = adminhttp.NewClient(
+				cfg.AdminAPIURL,
+				cfg.AdminBotToken,
+				time.Duration(cfg.AdminHTTPTimeout)*time.Second,
+			)
+			if err != nil {
+				if adminMode == "http" {
+					return nil, fmt.Errorf("create admin http client: %w", err)
+				}
+				useHTTPRepos = false
+				dualFallback = false
+				logger.Warn("admin http unavailable in dual mode, using db repositories", "error", err)
+			}
+		}
+	}
+
+	var accessUsersRepo access.UsersRepo = botUsersRepo
+	var accessRolesRepo access.RolesRepo = botRolesRepo
+	var moderationServiceRepo moderation.Repo = dualrepo.NewModerationRepo(nil, moderationRepo, adminMode)
+	var lookupRepo lookup.Repo = usersLookupRepo
+	var bansServiceRepo bans.Repo = bansRepo
+	var auditServiceRepo audit.Repo = auditRepo
+	var exportServiceRepo exportsvc.Repo = exportsRepo
+	var statsServiceRepo statssvc.Repo = workStatsRepo
+	var systemServiceRepo systemsvc.Repo = systemRepo
+
+	if useHTTPRepos {
+		accessUsersRepo = adminhttp.NewAccessUsersRepo(adminHTTPClient, botUsersRepo, dualFallback)
+		accessRolesRepo = adminhttp.NewAccessRolesRepo(adminHTTPClient, botRolesRepo, dualFallback)
+		httpModerationRepo := adminhttp.NewModerationRepo(adminHTTPClient, moderationRepo, dualFallback)
+		moderationServiceRepo = dualrepo.NewModerationRepo(httpModerationRepo, moderationRepo, adminMode)
+		lookupRepo = adminhttp.NewUsersLookupRepo(adminHTTPClient, usersLookupRepo, dualFallback)
+		bansServiceRepo = adminhttp.NewBansRepo(adminHTTPClient, bansRepo, dualFallback)
+		auditServiceRepo = adminhttp.NewAuditRepo(adminHTTPClient, auditRepo, dualFallback)
+		exportServiceRepo = adminhttp.NewExportsQueueRepo(adminHTTPClient, exportsRepo, dualFallback)
+		statsServiceRepo = adminhttp.NewWorkStatsRepo(adminHTTPClient, workStatsRepo, dualFallback)
+		systemServiceRepo = adminhttp.NewSystemRepo(adminHTTPClient, systemRepo, dualFallback)
+	}
 
 	var signer *s3infra.Signer
 	if strings.TrimSpace(cfg.S3Endpoint) != "" && strings.TrimSpace(cfg.S3Bucket) != "" {
@@ -76,14 +139,14 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		cfg:                 cfg,
 		logger:              logger,
 		db:                  db,
-		accessService:       access.NewService(cfg.OwnerTGID, botUsersRepo, botRolesRepo),
-		moderationService:   moderation.NewService(moderationRepo, signer),
-		lookupService:       lookup.NewService(postgres.NewUsersLookupRepo(db), signer),
-		bansService:         bans.NewService(postgres.NewBansRepo(db)),
-		auditService:        audit.NewService(postgres.NewAuditRepo(db)),
-		exportService:       exportsvc.NewService(postgres.NewExportsQueueRepo(db)),
-		statsService:        statssvc.NewService(postgres.NewWorkStatsRepo(db)),
-		systemService:       systemsvc.NewService(postgres.NewSystemRepo(db)),
+		accessService:       access.NewService(cfg.OwnerTGID, accessUsersRepo, accessRolesRepo),
+		moderationService:   moderation.NewService(moderationServiceRepo, signer),
+		lookupService:       lookup.NewService(lookupRepo, signer),
+		bansService:         bans.NewService(bansServiceRepo),
+		auditService:        audit.NewService(auditServiceRepo),
+		exportService:       exportsvc.NewService(exportServiceRepo),
+		statsService:        statssvc.NewService(statsServiceRepo),
+		systemService:       systemsvc.NewService(systemServiceRepo),
 		rejectByChat:        make(map[int64]rejectCommentState),
 		lookupInputByChat:   make(map[int64]lookupInputState),
 		lookupSessionByChat: make(map[int64]lookupSessionState),
@@ -110,5 +173,15 @@ func (a *App) close() {
 		if err := a.db.Close(); err != nil {
 			a.logger.Error("close postgres", "error", err)
 		}
+	}
+}
+
+func normalizeAdminMode(raw string) string {
+	mode := strings.ToLower(strings.TrimSpace(raw))
+	switch mode {
+	case "db", "http", "dual":
+		return mode
+	default:
+		return "dual"
 	}
 }

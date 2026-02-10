@@ -106,6 +106,9 @@ func (s *Service) signKey(ctx context.Context, key string) (string, error) {
 	if trimmed == "" {
 		return "", nil
 	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed, nil
+	}
 	if s.signer == nil {
 		return "", fmt.Errorf("moderation url signer is not configured")
 	}

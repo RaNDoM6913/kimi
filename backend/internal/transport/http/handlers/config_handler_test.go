@@ -53,6 +53,12 @@ func TestConfigHandlerResponseShape(t *testing.T) {
 	if int(antiabuse["like_max_per_sec"].(float64)) != 2 {
 		t.Fatalf("unexpected antiabuse.like_max_per_sec: %v", antiabuse["like_max_per_sec"])
 	}
+	if int(antiabuse["report_max_10m"].(float64)) != 3 {
+		t.Fatalf("unexpected antiabuse.report_max_10m: %v", antiabuse["report_max_10m"])
+	}
+	if int(antiabuse["new_device_risk_weight"].(float64)) != 3 {
+		t.Fatalf("unexpected antiabuse.new_device_risk_weight: %v", antiabuse["new_device_risk_weight"])
+	}
 	steps := antiabuse["cooldown_steps_sec"].([]interface{})
 	if len(steps) == 0 {
 		t.Fatalf("unexpected antiabuse.cooldown_steps_sec: %v", antiabuse["cooldown_steps_sec"])

@@ -16,15 +16,22 @@ type Job struct {
 	moderationRepo *pgrepo.ModerationRepo
 	storage        *mediasvc.S3Storage
 	retention      time.Duration
+	geoCleaner     exactGeoCleaner
+	exactRetention time.Duration
 	now            func() time.Time
 	logger         *zap.Logger
 }
 
+type exactGeoCleaner interface {
+	ClearExactGeoOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
+}
+
 func New() *Job {
 	return &Job{
-		retention: 365 * 24 * time.Hour,
-		now:       time.Now,
-		logger:    zap.NewNop(),
+		retention:      365 * 24 * time.Hour,
+		exactRetention: 48 * time.Hour,
+		now:            time.Now,
+		logger:         zap.NewNop(),
 	}
 }
 
@@ -47,12 +54,31 @@ func NewCircleCleanupJob(
 		moderationRepo: moderationRepo,
 		storage:        storage,
 		retention:      retention,
+		exactRetention: 48 * time.Hour,
 		now:            time.Now,
 		logger:         logger,
 	}
 }
 
+func (j *Job) AttachExactGeoCleanup(cleaner exactGeoCleaner, retention time.Duration) {
+	j.geoCleaner = cleaner
+	if retention > 0 {
+		j.exactRetention = retention
+	}
+}
+
 func (j *Job) Run(ctx context.Context) error {
+	if j.geoCleaner != nil && j.exactRetention > 0 {
+		exactCutoff := j.now().Add(-j.exactRetention)
+		rows, err := j.geoCleaner.ClearExactGeoOlderThan(ctx, exactCutoff)
+		if err != nil {
+			return fmt.Errorf("cleanup exact geo coordinates: %w", err)
+		}
+		if rows > 0 {
+			j.logger.Info("cleanup exact geo coordinates completed", zap.Int64("cleared", rows))
+		}
+	}
+
 	if j.mediaRepo == nil || j.moderationRepo == nil || j.storage == nil {
 		return nil
 	}

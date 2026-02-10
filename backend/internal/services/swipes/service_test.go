@@ -15,9 +15,11 @@ import (
 )
 
 type antiAbuseStub struct {
-	calls int
-	user  int64
-	at    time.Time
+	calls        int
+	user         int64
+	at           time.Time
+	lastWeight   int
+	lastCooldown int
 }
 
 func (s *antiAbuseStub) ApplyDecay(_ context.Context, _ int64, _ time.Time) (antiabusesvc.State, error) {
@@ -28,7 +30,22 @@ func (s *antiAbuseStub) ApplyViolation(_ context.Context, userID int64, weight i
 	s.calls++
 	s.user = userID
 	s.at = now
+	s.lastWeight = weight
 	return antiabusesvc.State{RiskScore: weight, Exists: true}, nil
+}
+
+func (s *antiAbuseStub) ApplyViolationWithCooldown(_ context.Context, userID int64, weight int, cooldownSec int, now time.Time) (antiabusesvc.State, error) {
+	s.calls++
+	s.user = userID
+	s.at = now
+	s.lastWeight = weight
+	s.lastCooldown = cooldownSec
+	cooldown := now.Add(time.Duration(cooldownSec) * time.Second)
+	return antiabusesvc.State{
+		RiskScore:     weight,
+		CooldownUntil: &cooldown,
+		Exists:        true,
+	}, nil
 }
 
 type telemetryStub struct {
@@ -43,6 +60,38 @@ func (s *telemetryStub) IngestBatch(_ context.Context, userID *int64, events []a
 	}
 	s.events = append([]analyticsvc.BatchEvent(nil), events...)
 	return nil
+}
+
+type rateLimiterStub struct {
+	allowed    bool
+	retryAfter int
+	reason     string
+}
+
+func (s rateLimiterStub) CheckLikeRate(context.Context, int64, string, string, string) (bool, int, string) {
+	return s.allowed, s.retryAfter, s.reason
+}
+
+type deviceRegistryStub struct {
+	known         bool
+	knownErr      error
+	upsertErr     error
+	upsertCalls   int
+	lastUserID    int64
+	lastDeviceID  string
+	lastSeenValue time.Time
+}
+
+func (s *deviceRegistryStub) IsKnown(context.Context, int64, string) (bool, error) {
+	return s.known, s.knownErr
+}
+
+func (s *deviceRegistryStub) UpsertSeen(_ context.Context, userID int64, deviceID string, seenAt time.Time) error {
+	s.upsertCalls++
+	s.lastUserID = userID
+	s.lastDeviceID = deviceID
+	s.lastSeenValue = seenAt
+	return s.upsertErr
 }
 
 func TestApplyLowCardViewViolationForLike(t *testing.T) {
@@ -154,10 +203,10 @@ func TestSwipeLikeGatesBlockAndEscalateCooldown(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, _ = svc.Swipe(ctx, 101, 202, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
-	_, _ = svc.Swipe(ctx, 101, 203, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
+	_, _ = svc.Swipe(ctx, 101, 202, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
+	_, _ = svc.Swipe(ctx, 101, 203, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
 
-	_, err = svc.Swipe(ctx, 101, 204, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
+	_, err = svc.Swipe(ctx, 101, 204, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
 	firstRateLimit, ok := IsTooFast(err)
 	if !ok {
 		t.Fatalf("expected TooFastError on third like, got %v", err)
@@ -170,7 +219,7 @@ func TestSwipeLikeGatesBlockAndEscalateCooldown(t *testing.T) {
 	}
 	firstCooldownUntil := *firstRateLimit.CooldownUntil
 
-	_, err = svc.Swipe(ctx, 101, 205, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
+	_, err = svc.Swipe(ctx, 101, 205, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
 	cooldownActive, ok := IsCooldownActive(err)
 	if !ok {
 		t.Fatalf("expected CooldownActiveError after rate limit, got %v", err)
@@ -186,10 +235,10 @@ func TestSwipeLikeGatesBlockAndEscalateCooldown(t *testing.T) {
 	mr.FastForward(advance)
 	now = now.Add(advance)
 
-	_, _ = svc.Swipe(ctx, 101, 206, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
-	_, _ = svc.Swipe(ctx, 101, 207, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
+	_, _ = svc.Swipe(ctx, 101, 206, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
+	_, _ = svc.Swipe(ctx, 101, 207, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
 
-	_, err = svc.Swipe(ctx, 101, 208, actionLike, "UTC", "sid-101", "127.0.0.1", SwipeClientTelemetry{})
+	_, err = svc.Swipe(ctx, 101, 208, actionLike, "UTC", "sid-101", "127.0.0.1", "device-101", SwipeClientTelemetry{})
 	secondRateLimit, ok := IsTooFast(err)
 	if !ok {
 		t.Fatalf("expected TooFastError on repeated burst, got %v", err)
@@ -282,13 +331,13 @@ func TestApplyLikeGatesLogsTooFastAndCooldownAppliedEvents(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", now); err != nil {
+	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", "device-501", now); err != nil {
 		t.Fatalf("gate #1: %v", err)
 	}
-	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", now); err != nil {
+	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", "device-501", now); err != nil {
 		t.Fatalf("gate #2: %v", err)
 	}
-	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", now); err == nil {
+	if _, err := svc.applyLikeGates(ctx, 501, "sid-501", "127.0.0.1", "device-501", now); err == nil {
 		t.Fatalf("expected too-fast error on gate #3")
 	}
 
@@ -303,5 +352,76 @@ func TestApplyLikeGatesLogsTooFastAndCooldownAppliedEvents(t *testing.T) {
 	}
 	if tel.events[1].Name != "antiabuse_cooldown_applied" {
 		t.Fatalf("unexpected second event name: %s", tel.events[1].Name)
+	}
+}
+
+func TestApplyLikeGatesReturnsTempUnavailableWithoutViolation(t *testing.T) {
+	ab := &antiAbuseStub{}
+	svc := &Service{
+		rateLimiter: rateLimiterStub{
+			allowed:    false,
+			retryAfter: 10,
+			reason:     "temp_unavailable",
+		},
+		antiAbuse: ab,
+	}
+
+	_, err := svc.applyLikeGates(context.Background(), 101, "sid-101", "127.0.0.1", "device-101", time.Now().UTC())
+	tu, ok := IsTempUnavailable(err)
+	if !ok {
+		t.Fatalf("expected TempUnavailableError, got %v", err)
+	}
+	if tu.RetryAfter() != 10 {
+		t.Fatalf("unexpected retry_after: got %d want %d", tu.RetryAfter(), 10)
+	}
+	if ab.calls != 0 {
+		t.Fatalf("risk violation must not be applied when redis is unavailable")
+	}
+}
+
+func TestHandleDeviceRegistrationNewDeviceIncreasesRiskScore(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("run miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	redisClient := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	defer func() { _ = redisClient.Close() }()
+
+	riskRepo := redrepo.NewRiskRepo(redisClient)
+	antiAbuse := antiabusesvc.NewService(riskRepo, antiabusesvc.Config{
+		RiskDecayHours:   6,
+		CooldownStepsSec: []int{30, 60, 300, 1800, 86400},
+		ShadowThreshold:  5,
+	})
+	devices := &deviceRegistryStub{known: false}
+	now := time.Date(2026, 2, 11, 10, 0, 0, 0, time.UTC)
+
+	svc := &Service{
+		antiAbuse: antiAbuse,
+		devices:   devices,
+		cfg: Config{
+			NewDeviceRiskWeight:  3,
+			NewDeviceCooldownSec: 30,
+		},
+		now: func() time.Time { return now },
+	}
+
+	state, err := svc.handleDeviceRegistration(context.Background(), 101, "new-device-101", now)
+	if err != nil {
+		t.Fatalf("handle device registration: %v", err)
+	}
+	if state.RiskScore != 3 {
+		t.Fatalf("expected risk_score=3 for new device, got %d", state.RiskScore)
+	}
+	if state.CooldownUntil == nil {
+		t.Fatalf("expected cooldown to be set for new device")
+	}
+	if got, want := *state.CooldownUntil, now.Add(30*time.Second); !got.Equal(want) {
+		t.Fatalf("unexpected cooldown_until: got %v want %v", got, want)
+	}
+	if devices.upsertCalls != 1 {
+		t.Fatalf("expected one upsert call, got %d", devices.upsertCalls)
 	}
 }

@@ -41,6 +41,11 @@ func (h *SwipeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "VALIDATION_ERROR", "target_id and action are required")
 		return
 	}
+	deviceID, ok := requiredDeviceID(r)
+	if !ok {
+		writeBadRequest(w, "VALIDATION_ERROR", "X-Device-Id header is required")
+		return
+	}
 
 	client := swipesvc.SwipeClientTelemetry{}
 	if req.Client != nil {
@@ -59,6 +64,7 @@ func (h *SwipeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		timezoneFromRequest(r),
 		identity.SID,
 		clientIPFromRequest(r),
+		deviceID,
 		client,
 	)
 	if err != nil {
@@ -84,6 +90,14 @@ func (h *SwipeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 					Message:       "cooldown is active, try again later",
 					RetryAfterSec: cd.RetryAfter(),
 					CooldownUntil: cd.CooldownUntil,
+				})
+				return
+			}
+			if tu, ok := swipesvc.IsTempUnavailable(err); ok {
+				httperrors.Write(w, http.StatusServiceUnavailable, httperrors.RateLimitError{
+					Code:          "TEMP_UNAVAILABLE",
+					Message:       "service temporarily unavailable",
+					RetryAfterSec: tu.RetryAfter(),
 				})
 				return
 			}

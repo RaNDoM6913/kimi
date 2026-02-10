@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ const (
 	actionLike      = "LIKE"
 	actionSuperLike = "SUPERLIKE"
 	actionDislike   = "DISLIKE"
+
+	reasonTempUnavailable = "temp_unavailable"
 )
 
 var (
@@ -80,6 +83,29 @@ func IsCooldownActive(err error) (*CooldownActiveError, bool) {
 	return nil, false
 }
 
+type TempUnavailableError struct {
+	RetryAfterSec int64
+}
+
+func (e TempUnavailableError) Error() string {
+	return "temporarily unavailable"
+}
+
+func (e TempUnavailableError) RetryAfter() int64 {
+	if e.RetryAfterSec <= 0 {
+		return 10
+	}
+	return e.RetryAfterSec
+}
+
+func IsTempUnavailable(err error) (*TempUnavailableError, bool) {
+	var tu TempUnavailableError
+	if errors.As(err, &tu) {
+		return &tu, true
+	}
+	return nil, false
+}
+
 type SwipeStore interface {
 	Create(ctx context.Context, tx pgx.Tx, actorUserID, targetUserID int64, action string, now time.Time) (pgrepo.SwipeRecord, error)
 	GetLastByActor(ctx context.Context, tx pgx.Tx, actorUserID int64) (pgrepo.SwipeRecord, error)
@@ -111,7 +137,7 @@ type EntitlementStore interface {
 }
 
 type RateLimiter interface {
-	CheckLikeRate(ctx context.Context, userID int64, sid, ip string) (allowed bool, retryAfterSec int, reason string)
+	CheckLikeRate(ctx context.Context, userID int64, sid, ip, deviceID string) (allowed bool, retryAfterSec int, reason string)
 }
 
 type QuotaSnapshotProvider interface {
@@ -121,10 +147,20 @@ type QuotaSnapshotProvider interface {
 type AntiAbuseService interface {
 	ApplyDecay(ctx context.Context, userID int64, now time.Time) (antiabusesvc.State, error)
 	ApplyViolation(ctx context.Context, userID int64, weight int, now time.Time) (antiabusesvc.State, error)
+	ApplyViolationWithCooldown(ctx context.Context, userID int64, weight int, cooldownSec int, now time.Time) (antiabusesvc.State, error)
 }
 
 type TelemetryService interface {
 	IngestBatch(ctx context.Context, userID *int64, events []analyticsvc.BatchEvent) error
+}
+
+type DeviceRegistry interface {
+	IsKnown(ctx context.Context, userID int64, deviceID string) (bool, error)
+	UpsertSeen(ctx context.Context, userID int64, deviceID string, seenAt time.Time) error
+}
+
+type DailyMetricsStore interface {
+	Increment(ctx context.Context, userID int64, at time.Time, delta pgrepo.DailyMetricsDelta) error
 }
 
 type SwipeClientTelemetry struct {
@@ -141,6 +177,8 @@ type Config struct {
 	DefaultIsPlus        bool
 	MinCardViewMS        int
 	SuspectLikeThreshold int
+	NewDeviceRiskWeight  int
+	NewDeviceCooldownSec int
 }
 
 type SwipeResult struct {
@@ -165,6 +203,8 @@ type Service struct {
 	quotaView    QuotaSnapshotProvider
 	antiAbuse    AntiAbuseService
 	telemetry    TelemetryService
+	devices      DeviceRegistry
+	dailyMetrics DailyMetricsStore
 	cfg          Config
 	now          func() time.Time
 }
@@ -201,6 +241,12 @@ func NewService(deps Dependencies, cfg Config) *Service {
 	if cfg.SuspectLikeThreshold <= 0 {
 		cfg.SuspectLikeThreshold = 8
 	}
+	if cfg.NewDeviceRiskWeight <= 0 {
+		cfg.NewDeviceRiskWeight = 3
+	}
+	if cfg.NewDeviceCooldownSec <= 0 {
+		cfg.NewDeviceCooldownSec = 30
+	}
 
 	return &Service{
 		pool:         deps.Pool,
@@ -218,7 +264,15 @@ func NewService(deps Dependencies, cfg Config) *Service {
 	}
 }
 
-func (s *Service) Swipe(ctx context.Context, userID, targetID int64, action, timezone, sid, ip string, client SwipeClientTelemetry) (SwipeResult, error) {
+func (s *Service) AttachDevices(devices DeviceRegistry) {
+	s.devices = devices
+}
+
+func (s *Service) AttachDailyMetrics(store DailyMetricsStore) {
+	s.dailyMetrics = store
+}
+
+func (s *Service) Swipe(ctx context.Context, userID, targetID int64, action, timezone, sid, ip, deviceID string, client SwipeClientTelemetry) (SwipeResult, error) {
 	if userID <= 0 || targetID <= 0 || userID == targetID {
 		return SwipeResult{}, ErrValidation
 	}
@@ -232,10 +286,15 @@ func (s *Service) Swipe(ctx context.Context, userID, targetID int64, action, tim
 	gateState := antiabusesvc.State{}
 	if normalizedAction == actionLike || normalizedAction == actionSuperLike {
 		var err error
-		gateState, err = s.applyLikeGates(ctx, userID, sid, ip, now)
+		gateState, err = s.applyLikeGates(ctx, userID, sid, ip, deviceID, now)
 		if err != nil {
 			return SwipeResult{}, err
 		}
+	}
+	if deviceState, err := s.handleDeviceRegistration(ctx, userID, deviceID, now); err != nil {
+		log.Printf("warning: handle new device signal failed: %v", err)
+	} else if deviceState.RiskScore > gateState.RiskScore {
+		gateState = deviceState
 	}
 	isSuspectLike := (normalizedAction == actionLike || normalizedAction == actionSuperLike) && s.shouldMarkLikeAsSuspect(gateState)
 
@@ -299,6 +358,7 @@ func (s *Service) Swipe(ctx context.Context, userID, targetID int64, action, tim
 		return SwipeResult{}, err
 	}
 
+	s.incrementDailyMetrics(ctx, userID, now, normalizedAction, matchCreated)
 	s.logSuspectLikeEvent(ctx, userID, targetID, normalizedAction, isSuspectLike, gateState.RiskScore, now)
 	s.applyLowCardViewViolation(ctx, userID, targetID, normalizedAction, client, now)
 
@@ -311,6 +371,31 @@ func (s *Service) Swipe(ctx context.Context, userID, targetID int64, action, tim
 		MatchCreated: matchCreated,
 		Quota:        snapshot,
 	}, nil
+}
+
+func (s *Service) incrementDailyMetrics(ctx context.Context, userID int64, at time.Time, action string, matchCreated bool) {
+	if s.dailyMetrics == nil || userID <= 0 {
+		return
+	}
+
+	delta := pgrepo.DailyMetricsDelta{}
+	switch action {
+	case actionLike:
+		delta.Likes = 1
+	case actionSuperLike:
+		delta.SuperLikes = 1
+	case actionDislike:
+		delta.Dislikes = 1
+	}
+	if matchCreated {
+		delta.Matches++
+	}
+	if delta == (pgrepo.DailyMetricsDelta{}) {
+		return
+	}
+	if err := s.dailyMetrics.Increment(ctx, userID, at, delta); err != nil {
+		log.Printf("warning: increment daily metrics failed for swipe: %v", err)
+	}
 }
 
 func (s *Service) Rewind(ctx context.Context, userID int64, timezone string) (RewindResult, error) {
@@ -486,7 +571,7 @@ func (s *Service) applyLowCardViewViolation(ctx context.Context, userID, targetI
 	}
 }
 
-func (s *Service) applyLikeGates(ctx context.Context, userID int64, sid, ip string, now time.Time) (antiabusesvc.State, error) {
+func (s *Service) applyLikeGates(ctx context.Context, userID int64, sid, ip, deviceID string, now time.Time) (antiabusesvc.State, error) {
 	state := antiabusesvc.State{}
 	if s.antiAbuse != nil {
 		decayedState, err := s.antiAbuse.ApplyDecay(ctx, userID, now)
@@ -505,9 +590,14 @@ func (s *Service) applyLikeGates(ctx context.Context, userID int64, sid, ip stri
 		return state, nil
 	}
 
-	allowed, retryAfter, reason := s.rateLimiter.CheckLikeRate(ctx, userID, sid, ip)
+	allowed, retryAfter, reason := s.rateLimiter.CheckLikeRate(ctx, userID, sid, ip, deviceID)
 	if allowed {
 		return state, nil
+	}
+	if reason == reasonTempUnavailable {
+		return state, TempUnavailableError{
+			RetryAfterSec: int64(retryAfter),
+		}
 	}
 
 	var cooldownUntil *time.Time
@@ -517,13 +607,71 @@ func (s *Service) applyLikeGates(ctx context.Context, userID int64, sid, ip stri
 			cooldownUntil = violatedState.CooldownUntil
 		}
 	}
-	s.logTooFastAndCooldownEvents(ctx, userID, sid, ip, reason, retryAfter, state, now)
+	s.logTooFastAndCooldownEvents(ctx, userID, sid, ip, deviceID, reason, retryAfter, state, now)
 
 	return state, TooFastError{
 		RetryAfterSec: int64(retryAfter),
 		CooldownUntil: cooldownUntil,
 		Reason:        reason,
 	}
+}
+
+func (s *Service) handleDeviceRegistration(ctx context.Context, userID int64, deviceID string, now time.Time) (antiabusesvc.State, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if s.devices == nil || deviceID == "" || userID <= 0 {
+		return antiabusesvc.State{}, nil
+	}
+	if now.IsZero() {
+		now = s.now().UTC()
+	}
+
+	known, err := s.devices.IsKnown(ctx, userID, deviceID)
+	if err != nil {
+		return antiabusesvc.State{}, err
+	}
+	if err := s.devices.UpsertSeen(ctx, userID, deviceID, now); err != nil {
+		return antiabusesvc.State{}, err
+	}
+	if known {
+		return antiabusesvc.State{}, nil
+	}
+
+	state := antiabusesvc.State{}
+	if s.antiAbuse != nil {
+		state, err = s.antiAbuse.ApplyViolationWithCooldown(ctx, userID, s.cfg.NewDeviceRiskWeight, s.cfg.NewDeviceCooldownSec, now)
+		if err != nil {
+			return antiabusesvc.State{}, err
+		}
+	}
+
+	s.logNewDeviceEvent(ctx, userID, deviceID, state, now)
+	return state, nil
+}
+
+func (s *Service) logNewDeviceEvent(ctx context.Context, userID int64, deviceID string, state antiabusesvc.State, now time.Time) {
+	if s.telemetry == nil || userID <= 0 {
+		return
+	}
+
+	cooldownUntilTS := int64(0)
+	if state.CooldownUntil != nil {
+		cooldownUntilTS = state.CooldownUntil.UTC().Unix()
+	}
+
+	uid := userID
+	_ = s.telemetry.IngestBatch(ctx, &uid, []analyticsvc.BatchEvent{
+		{
+			Name: "antiabuse_new_device",
+			TS:   now.UTC().UnixMilli(),
+			Props: map[string]any{
+				"device_id":               deviceID,
+				"new_device_risk_weight":  s.cfg.NewDeviceRiskWeight,
+				"new_device_cooldown_sec": s.cfg.NewDeviceCooldownSec,
+				"risk_score":              state.RiskScore,
+				"cooldown_until_ts":       cooldownUntilTS,
+			},
+		},
+	})
 }
 
 func (s *Service) shouldMarkLikeAsSuspect(state antiabusesvc.State) bool {
@@ -561,7 +709,7 @@ func (s *Service) logSuspectLikeEvent(ctx context.Context, userID, targetID int6
 func (s *Service) logTooFastAndCooldownEvents(
 	ctx context.Context,
 	userID int64,
-	sid, ip, reason string,
+	sid, ip, deviceID, reason string,
 	retryAfter int,
 	state antiabusesvc.State,
 	now time.Time,
@@ -588,6 +736,8 @@ func (s *Service) logTooFastAndCooldownEvents(
 				"retry_after_sec": retry,
 				"has_sid":         strings.TrimSpace(sid) != "",
 				"has_ip":          strings.TrimSpace(ip) != "",
+				"has_device_id":   strings.TrimSpace(deviceID) != "",
+				"device_id":       strings.TrimSpace(deviceID),
 				"risk_score":      state.RiskScore,
 			},
 		},

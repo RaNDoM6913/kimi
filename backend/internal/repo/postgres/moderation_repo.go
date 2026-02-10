@@ -21,6 +21,7 @@ type ModerationItemRecord struct {
 	ID              int64
 	UserID          int64
 	Status          string
+	ReasonCode      *string
 	ReasonText      *string
 	RequiredFixStep *string
 	ETABucket       string
@@ -243,10 +244,12 @@ UPDATE moderation_items
 SET
 	status = 'APPROVED',
 	moderator_tg_id = $2,
+	reason_code = NULL,
 	reason_text = NULL,
 	required_fix_step = NULL,
 	locked_by_tg_id = NULL,
-	locked_until = NOW(),
+	locked_at = NULL,
+	locked_until = NULL,
 	decided_at = NOW(),
 	eta_bucket = COALESCE(NULLIF($3, ''), eta_bucket),
 	updated_at = NOW()
@@ -258,7 +261,12 @@ WHERE id = $1
 	return nil
 }
 
-func (r *ModerationRepo) MarkRejected(ctx context.Context, itemID int64, moderatorTGID int64, reasonText, requiredFixStep, etaBucket string) error {
+func (r *ModerationRepo) MarkRejected(
+	ctx context.Context,
+	itemID int64,
+	moderatorTGID int64,
+	reasonCode, reasonText, requiredFixStep, etaBucket string,
+) error {
 	if r.pool == nil {
 		return fmt.Errorf("postgres pool is nil")
 	}
@@ -271,16 +279,17 @@ UPDATE moderation_items
 SET
 	status = 'REJECTED',
 	moderator_tg_id = $2,
-	reason_code = NULL,
-	reason_text = $3,
-	required_fix_step = $4,
+	reason_code = NULLIF($3, ''),
+	reason_text = $4,
+	required_fix_step = $5,
 	locked_by_tg_id = NULL,
-	locked_until = NOW(),
+	locked_at = NULL,
+	locked_until = NULL,
 	decided_at = NOW(),
-	eta_bucket = COALESCE(NULLIF($5, ''), eta_bucket),
+	eta_bucket = COALESCE(NULLIF($6, ''), eta_bucket),
 	updated_at = NOW()
 WHERE id = $1
-`, itemID, moderatorTGID, strings.TrimSpace(reasonText), strings.TrimSpace(requiredFixStep), etaBucket); err != nil {
+`, itemID, moderatorTGID, strings.TrimSpace(reasonCode), strings.TrimSpace(reasonText), strings.TrimSpace(requiredFixStep), etaBucket); err != nil {
 		return fmt.Errorf("mark moderation rejected: %w", err)
 	}
 

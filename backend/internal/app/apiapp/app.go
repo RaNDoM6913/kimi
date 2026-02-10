@@ -31,6 +31,7 @@ import (
 	profilesvc "github.com/ivankudzin/tgapp/backend/internal/services/profiles"
 	ratesvc "github.com/ivankudzin/tgapp/backend/internal/services/rate"
 	swipesvc "github.com/ivankudzin/tgapp/backend/internal/services/swipes"
+	userssvc "github.com/ivankudzin/tgapp/backend/internal/services/users"
 )
 
 type App struct {
@@ -62,6 +63,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	sessionRepo := redrepo.NewSessionRepo(redisClient)
 	rateRepo := redrepo.NewRateRepo(redisClient)
 	riskRepo := redrepo.NewRiskRepo(redisClient)
+	antiAbuseDashboardRepo := redrepo.NewAntiAbuseDashboardRepo(redisClient)
 	adRepo := pgrepo.NewAdRepo(pool)
 	feedRepo := pgrepo.NewFeedRepo(pool)
 	swipeRepo := pgrepo.NewSwipeRepo(pool)
@@ -69,6 +71,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	matchRepo := pgrepo.NewMatchRepo(pool)
 	blockRepo := pgrepo.NewBlockRepo(pool)
 	reportRepo := pgrepo.NewReportRepo(pool)
+	dailyMetricsRepo := pgrepo.NewDailyMetricsRepo(pool)
 	profileRepo := pgrepo.NewProfileRepo(pool)
 	mediaRepo := pgrepo.NewMediaRepo(pool)
 	moderationRepo := pgrepo.NewModerationRepo(pool)
@@ -76,8 +79,12 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	entitlementRepo := pgrepo.NewEntitlementRepo(pool)
 	eventRepo := pgrepo.NewEventRepo(pool)
 	purchaseRepo := pgrepo.NewPurchaseRepo(pool)
+	userRepo := pgrepo.NewUserRepo(pool)
+	userDeviceRepo := pgrepo.NewUserDeviceRepo(pool)
 	jwtManager := authsvc.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	authService := authsvc.NewService(jwtManager, sessionRepo, cfg.Auth.RefreshTTL)
+	authService.AttachUsers(authUserStoreAdapter{repo: userRepo})
+	authService.AttachDevices(userDeviceRepo)
 	geoService := geosvc.NewService(cfg.Remote.Cities, profileRepo)
 	feedService := feedsvc.NewService(feedRepo, feedsvc.Config{
 		DefaultAgeMin:        cfg.Remote.Filters.AgeMin,
@@ -107,6 +114,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	analyticsService := analyticsvc.NewService(eventRepo, analyticsvc.Config{
 		MaxBatchSize: 100,
 	})
+	analyticsService.AttachAntiAbuseDashboard(antiAbuseDashboardRepo)
 	antiAbuseService.AttachTelemetry(analyticsService)
 	feedService.AttachAntiAbuse(antiAbuseService, cfg.Remote.AntiAbuse.ShadowRankMultiplier)
 	profileService := profilesvc.NewService(profileRepo)
@@ -124,11 +132,14 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	})
 	likeService.AttachIncoming(pool, likeRepo, entitlementRepo)
 	matchesService := matchessvc.NewService(matchessvc.Dependencies{
-		Pool:        pool,
-		MatchStore:  matchRepo,
-		BlockStore:  blockRepo,
-		ReportStore: reportRepo,
+		Pool:              pool,
+		MatchStore:        matchRepo,
+		BlockStore:        blockRepo,
+		ReportStore:       reportRepo,
+		ReportRateStore:   rateRepo,
+		ReportMaxPer10Min: cfg.Remote.AntiAbuse.ReportMaxPer10Min,
 	})
+	matchesService.AttachDailyMetrics(dailyMetricsRepo)
 	swipeService := swipesvc.NewService(swipesvc.Dependencies{
 		Pool:         pool,
 		SwipeStore:   swipeRepo,
@@ -148,7 +159,11 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		DefaultIsPlus:        cfg.Remote.MeDefaults.IsPlus,
 		MinCardViewMS:        cfg.Remote.AntiAbuse.MinCardViewMS,
 		SuspectLikeThreshold: cfg.Remote.AntiAbuse.SuspectLikeThreshold,
+		NewDeviceRiskWeight:  cfg.Remote.AntiAbuse.NewDeviceRiskWeight,
+		NewDeviceCooldownSec: firstCooldownStep(cfg.Remote.AntiAbuse.CooldownStepsSec),
 	})
+	swipeService.AttachDevices(userDeviceRepo)
+	swipeService.AttachDailyMetrics(dailyMetricsRepo)
 
 	server := &http.Server{
 		Addr:         cfg.HTTP.Addr,
@@ -173,13 +188,17 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	mediaStorage := mediasvc.NewS3Storage(s3Client, cfg.S3.Bucket)
 	mediaService := mediasvc.NewService(mediaRepo, mediaStorage)
 	moderationService := modsvc.NewService(moderationRepo, profileRepo, mediaRepo, mediaStorage)
+	moderationService.AttachDailyMetrics(dailyMetricsRepo)
+	userService := userssvc.NewService(pool, mediaRepo, mediaStorage)
 
 	RegisterRoutes(r, Dependencies{
 		AdsService:         adsService,
 		AntiAbuseService:   antiAbuseService,
+		AntiAbuseDashboard: antiAbuseDashboardRepo,
 		AnalyticsService:   analyticsService,
 		EntitlementService: entitlementService,
 		AuthService:        authService,
+		DailyMetricsRepo:   dailyMetricsRepo,
 		FeedService:        feedService,
 		GeoService:         geoService,
 		LikeService:        likeService,
@@ -189,6 +208,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		PaymentService:     paymentService,
 		ProfileService:     profileService,
 		SwipeService:       swipeService,
+		UserService:        userService,
 		Logger:             log,
 		Config:             cfg,
 	})
@@ -233,4 +253,37 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 func (a *App) Handler() http.Handler {
 	return a.httpRouter
+}
+
+type authUserStoreAdapter struct {
+	repo *pgrepo.UserRepo
+}
+
+func (a authUserStoreAdapter) GetOrCreateByTelegramID(ctx context.Context, telegramID int64) (authsvc.UserRecord, error) {
+	if a.repo == nil {
+		return authsvc.UserRecord{
+			UserID: telegramID,
+			Role:   "user",
+		}, nil
+	}
+
+	user, err := a.repo.GetOrCreateByTelegramID(ctx, telegramID)
+	if err != nil {
+		return authsvc.UserRecord{}, err
+	}
+
+	return authsvc.UserRecord{
+		UserID: user.ID,
+		Role:   user.Role,
+	}, nil
+}
+
+func firstCooldownStep(steps []int) int {
+	if len(steps) == 0 {
+		return 30
+	}
+	if steps[0] <= 0 {
+		return 30
+	}
+	return steps[0]
 }

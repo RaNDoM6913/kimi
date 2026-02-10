@@ -24,9 +24,24 @@ type SessionStore interface {
 	DeleteAllForUser(ctx context.Context, userID int64) error
 }
 
+type DeviceStore interface {
+	UpsertSeen(ctx context.Context, userID int64, deviceID string, seenAt time.Time) error
+}
+
+type UserStore interface {
+	GetOrCreateByTelegramID(ctx context.Context, telegramID int64) (UserRecord, error)
+}
+
+type UserRecord struct {
+	UserID int64
+	Role   string
+}
+
 type Service struct {
 	jwt        *JWTManager
 	sessions   SessionStore
+	users      UserStore
+	devices    DeviceStore
 	refreshTTL time.Duration
 	now        func() time.Time
 }
@@ -47,17 +62,56 @@ func NewService(jwtManager *JWTManager, sessions SessionStore, refreshTTL time.D
 	}
 }
 
-func (s *Service) LoginTelegram(ctx context.Context, initData string) (AuthResult, error) {
+func (s *Service) AttachDevices(devices DeviceStore) {
+	s.devices = devices
+}
+
+func (s *Service) AttachUsers(users UserStore) {
+	s.users = users
+}
+
+func (s *Service) LoginTelegram(ctx context.Context, initData, deviceID string) (AuthResult, error) {
 	if err := ValidateTelegramInitData(initData); err != nil {
 		return AuthResult{}, err
 	}
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return AuthResult{}, ErrInvalidInput
+	}
 
-	userID, err := ResolveTelegramUserID(initData)
+	telegramID, err := ResolveTelegramUserID(initData)
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("resolve telegram user id: %w", err)
 	}
 
-	return s.issueForUser(ctx, userID, string(enums.RoleUser))
+	userID := telegramID
+	role := string(enums.RoleUser)
+	if s.users != nil {
+		user, resolveErr := s.users.GetOrCreateByTelegramID(ctx, telegramID)
+		if resolveErr != nil {
+			return AuthResult{}, fmt.Errorf("resolve user by telegram id: %w", resolveErr)
+		}
+		if user.UserID <= 0 {
+			return AuthResult{}, ErrUnauthorized
+		}
+		userID = user.UserID
+		if normalizedRole := strings.TrimSpace(user.Role); normalizedRole != "" {
+			role = normalizedRole
+		}
+	}
+
+	result, err := s.issueForUser(ctx, userID, role)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	if s.devices != nil {
+		if err := s.devices.UpsertSeen(ctx, userID, deviceID, s.now().UTC()); err != nil {
+			return AuthResult{}, fmt.Errorf("upsert user device: %w", err)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (AuthResult, error) {

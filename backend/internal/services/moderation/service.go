@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -14,9 +15,26 @@ const signedURLTTL = 5 * time.Minute
 const queueLockTTL = 10 * time.Minute
 
 var ErrQueueEmpty = errors.New("moderation queue is empty")
+var ErrInvalidReasonCode = errors.New("invalid reject reason code")
+
+var allowedRejectReasonCodes = map[string]struct{}{
+	"PHOTO_NO_FACE":      {},
+	"PHOTO_FAKE_NOT_YOU": {},
+	"PHOTO_PROHIBITED":   {},
+	"CIRCLE_MISMATCH":    {},
+	"CIRCLE_FAILED":      {},
+	"PROFILE_INCOMPLETE": {},
+	"SPAM_ADS_LINKS":     {},
+	"BOT_SUSPECT":        {},
+	"OTHER":              {},
+}
 
 type URLSigner interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
+}
+
+type DailyMetricsStore interface {
+	Increment(ctx context.Context, userID int64, at time.Time, delta pgrepo.DailyMetricsDelta) error
 }
 
 type Service struct {
@@ -24,6 +42,7 @@ type Service struct {
 	profileRepo    *pgrepo.ProfileRepo
 	mediaRepo      *pgrepo.MediaRepo
 	signer         URLSigner
+	dailyMetrics   DailyMetricsStore
 }
 
 type UserStatus struct {
@@ -34,14 +53,18 @@ type UserStatus struct {
 }
 
 type QueueItem struct {
-	ItemID    int64
-	UserID    int64
-	QueueSize int
-	ETABucket string
-	Profile   pgrepo.ProfileQueueSummary
-	PhotoURLs []string
-	CircleURL *string
-	CreatedAt time.Time
+	ItemID       int64
+	UserID       int64
+	Status       string
+	QueueSize    int
+	ETABucket    string
+	LockedByTGID *int64
+	LockedAt     *time.Time
+	LockedUntil  *time.Time
+	Profile      pgrepo.ProfileQueueSummary
+	PhotoURLs    []string
+	CircleURL    *string
+	CreatedAt    time.Time
 }
 
 func NewService(moderationRepo *pgrepo.ModerationRepo, profileRepo *pgrepo.ProfileRepo, mediaRepo *pgrepo.MediaRepo, signer URLSigner) *Service {
@@ -51,6 +74,10 @@ func NewService(moderationRepo *pgrepo.ModerationRepo, profileRepo *pgrepo.Profi
 		mediaRepo:      mediaRepo,
 		signer:         signer,
 	}
+}
+
+func (s *Service) AttachDailyMetrics(store DailyMetricsStore) {
+	s.dailyMetrics = store
 }
 
 func (s *Service) GetUserStatus(ctx context.Context, userID int64) (UserStatus, error) {
@@ -170,14 +197,18 @@ func (s *Service) GetNextQueueItem(ctx context.Context, actorTGID int64) (QueueI
 	}
 
 	return QueueItem{
-		ItemID:    item.ID,
-		UserID:    item.UserID,
-		QueueSize: queueSize,
-		ETABucket: etaBucket,
-		Profile:   profile,
-		PhotoURLs: photoURLs,
-		CircleURL: circleURL,
-		CreatedAt: item.CreatedAt,
+		ItemID:       item.ID,
+		UserID:       item.UserID,
+		Status:       strings.ToUpper(strings.TrimSpace(item.Status)),
+		QueueSize:    queueSize,
+		ETABucket:    etaBucket,
+		LockedByTGID: item.LockedByTGID,
+		LockedAt:     item.LockedAt,
+		LockedUntil:  item.LockedUntil,
+		Profile:      profile,
+		PhotoURLs:    photoURLs,
+		CircleURL:    circleURL,
+		CreatedAt:    item.CreatedAt,
 	}, nil
 }
 
@@ -207,16 +238,25 @@ func (s *Service) Approve(ctx context.Context, itemID int64, moderatorTGID int64
 	if err := s.profileRepo.ApplyModerationDecision(ctx, item.UserID, "APPROVED", true); err != nil {
 		return err
 	}
+	if s.dailyMetrics != nil {
+		if err := s.dailyMetrics.Increment(ctx, item.UserID, time.Now().UTC(), pgrepo.DailyMetricsDelta{Approved: 1}); err != nil {
+			log.Printf("warning: increment daily metrics failed for moderation approve: %v", err)
+		}
+	}
 
 	return nil
 }
 
-func (s *Service) Reject(ctx context.Context, itemID int64, moderatorTGID int64, reasonText, requiredFixStep string) error {
+func (s *Service) Reject(ctx context.Context, itemID int64, moderatorTGID int64, reasonCode, reasonText, requiredFixStep string) error {
 	if itemID <= 0 {
 		return fmt.Errorf("invalid moderation item id")
 	}
 	if strings.TrimSpace(reasonText) == "" || strings.TrimSpace(requiredFixStep) == "" {
 		return fmt.Errorf("reason_text and required_fix_step are required")
+	}
+	normalizedReasonCode := strings.ToUpper(strings.TrimSpace(reasonCode))
+	if _, ok := allowedRejectReasonCodes[normalizedReasonCode]; !ok {
+		return ErrInvalidReasonCode
 	}
 	if s.moderationRepo == nil || s.profileRepo == nil {
 		return fmt.Errorf("moderation service dependencies are not configured")
@@ -233,7 +273,7 @@ func (s *Service) Reject(ctx context.Context, itemID int64, moderatorTGID int64,
 	}
 	etaBucket := ETABucketFromQueueSize(queueSize)
 
-	if err := s.moderationRepo.MarkRejected(ctx, itemID, moderatorTGID, reasonText, requiredFixStep, etaBucket); err != nil {
+	if err := s.moderationRepo.MarkRejected(ctx, itemID, moderatorTGID, normalizedReasonCode, reasonText, requiredFixStep, etaBucket); err != nil {
 		return err
 	}
 

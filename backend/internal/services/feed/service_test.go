@@ -17,6 +17,10 @@ type feedRepoStub struct {
 	lastQuery pgrepo.FeedQuery
 }
 
+func float64ptr(v float64) *float64 {
+	return &v
+}
+
 type feedAdStoreStub struct {
 	items []pgrepo.AdCardRecord
 }
@@ -211,7 +215,7 @@ func TestGetInjectsAdsByInterval(t *testing.T) {
 	}
 }
 
-func TestGetDemotesShadowCandidatesButKeepsCursorOrder(t *testing.T) {
+func TestGetAppliesShadowRankMultiplierAndKeepsCursorOrder(t *testing.T) {
 	repo := &feedRepoStub{
 		viewer: pgrepo.FeedViewerContext{
 			UserID:     10,
@@ -224,8 +228,26 @@ func TestGetDemotesShadowCandidatesButKeepsCursorOrder(t *testing.T) {
 			Goals:      []string{"relationship"},
 		},
 		items: []pgrepo.FeedCandidate{
-			{UserID: 301, DisplayName: "shadow-first", CityID: "minsk", City: "Minsk", Age: 25, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 12, 0, 0, 0, time.UTC)},
-			{UserID: 300, DisplayName: "normal-second", CityID: "minsk", City: "Minsk", Age: 24, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 59, 0, 0, time.UTC)},
+			{
+				UserID:        301,
+				DisplayName:   "shadow-first",
+				CityID:        "minsk",
+				City:          "Minsk",
+				Age:           25,
+				GoalsPriority: 1,
+				RankScore:     float64ptr(1.0),
+				CreatedAt:     time.Date(2026, 2, 8, 12, 0, 0, 0, time.UTC),
+			},
+			{
+				UserID:        300,
+				DisplayName:   "normal-second",
+				CityID:        "minsk",
+				City:          "Minsk",
+				Age:           24,
+				GoalsPriority: 1,
+				RankScore:     float64ptr(0.7),
+				CreatedAt:     time.Date(2026, 2, 8, 11, 59, 0, 0, time.UTC),
+			},
 		},
 	}
 
@@ -249,7 +271,7 @@ func TestGetDemotesShadowCandidatesButKeepsCursorOrder(t *testing.T) {
 		t.Fatalf("unexpected items count: got %d want %d", len(result.Items), 2)
 	}
 	if result.Items[0].UserID != 300 || result.Items[1].UserID != 301 {
-		t.Fatalf("unexpected order after shadow demotion: got [%d,%d] want [300,301]", result.Items[0].UserID, result.Items[1].UserID)
+		t.Fatalf("unexpected order after multiplier demotion: got [%d,%d] want [300,301]", result.Items[0].UserID, result.Items[1].UserID)
 	}
 	if result.NextCursor == "" {
 		t.Fatalf("expected next cursor")
@@ -260,5 +282,58 @@ func TestGetDemotesShadowCandidatesButKeepsCursorOrder(t *testing.T) {
 	}
 	if repo.lastQuery.CursorUserID != 300 {
 		t.Fatalf("cursor must follow base SQL order, got %d want %d", repo.lastQuery.CursorUserID, 300)
+	}
+}
+
+func TestGetDilutesShadowCandidatesWhenScoreIsMissing(t *testing.T) {
+	repo := &feedRepoStub{
+		viewer: pgrepo.FeedViewerContext{
+			UserID:     10,
+			CityID:     "minsk",
+			Gender:     "male",
+			LookingFor: "female",
+			AgeMin:     18,
+			AgeMax:     30,
+			RadiusKM:   3,
+			Goals:      []string{"relationship"},
+		},
+		items: []pgrepo.FeedCandidate{
+			{UserID: 901, DisplayName: "shadow-1", CityID: "minsk", City: "Minsk", Age: 23, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 12, 0, 0, 0, time.UTC)},
+			{UserID: 800, DisplayName: "normal-1", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 59, 0, 0, time.UTC)},
+			{UserID: 801, DisplayName: "normal-2", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 58, 0, 0, time.UTC)},
+			{UserID: 802, DisplayName: "normal-3", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 57, 0, 0, time.UTC)},
+			{UserID: 803, DisplayName: "normal-4", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 56, 0, 0, time.UTC)},
+			{UserID: 804, DisplayName: "normal-5", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 55, 0, 0, time.UTC)},
+			{UserID: 902, DisplayName: "shadow-2", CityID: "minsk", City: "Minsk", Age: 23, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 54, 0, 0, time.UTC)},
+			{UserID: 805, DisplayName: "normal-6", CityID: "minsk", City: "Minsk", Age: 22, GoalsPriority: 1, CreatedAt: time.Date(2026, 2, 8, 11, 53, 0, 0, time.UTC)},
+		},
+	}
+
+	service := NewService(repo, Config{
+		DefaultAgeMin:   18,
+		DefaultAgeMax:   30,
+		DefaultRadiusKM: 3,
+		MaxRadiusKM:     50,
+	})
+	service.AttachAntiAbuse(&feedAntiAbuseStub{
+		shadow: map[int64]bool{
+			901: true,
+			902: true,
+		},
+	}, 0.4)
+
+	result, err := service.Get(context.Background(), 10, "", 8)
+	if err != nil {
+		t.Fatalf("get feed with shadow dilution: %v", err)
+	}
+	if len(result.Items) != 8 {
+		t.Fatalf("unexpected items count: got %d want %d", len(result.Items), 8)
+	}
+
+	wantOrder := []int64{800, 801, 802, 803, 804, 901, 805, 902}
+	for i, userID := range wantOrder {
+		if result.Items[i].UserID != userID {
+			t.Fatalf("unexpected dilution order at index %d: got %d want %d", i, result.Items[i].UserID, userID)
+		}
 	}
 }

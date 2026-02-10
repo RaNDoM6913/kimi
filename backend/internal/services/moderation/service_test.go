@@ -1,6 +1,10 @@
 package moderation
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestETABucketFromQueueSize(t *testing.T) {
 	tests := []struct {
@@ -29,5 +33,19 @@ func TestETABucketFromQueueSize(t *testing.T) {
 				t.Fatalf("unexpected bucket for queue=%d: got %s want %s", tt.queueSize, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRejectReasonCodeValidation(t *testing.T) {
+	svc := NewService(nil, nil, nil, nil)
+
+	err := svc.Reject(context.Background(), 1, 1, "BAD_REASON", "text", "step")
+	if !errors.Is(err, ErrInvalidReasonCode) {
+		t.Fatalf("expected ErrInvalidReasonCode, got %v", err)
+	}
+
+	err = svc.Reject(context.Background(), 1, 1, "OTHER", "text", "step")
+	if errors.Is(err, ErrInvalidReasonCode) {
+		t.Fatalf("did not expect ErrInvalidReasonCode for OTHER")
 	}
 }

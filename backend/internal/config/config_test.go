@@ -12,11 +12,15 @@ func TestLoadUsesDefaultsAndYAMLOverrides(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "config.yaml")
 	yaml := `
+geo:
+  exact_retention_hours: 72
 remote:
   limits:
     free_likes_per_day: 99
   antiabuse:
     like_max_min: 66
+    report_max_10m: 5
+    new_device_risk_weight: 9
   ads_inject:
     free: 11
   filters:
@@ -42,6 +46,12 @@ remote:
 	if cfg.Remote.AntiAbuse.LikeMaxPerMin != 66 {
 		t.Fatalf("unexpected antiabuse like_max_min: %d", cfg.Remote.AntiAbuse.LikeMaxPerMin)
 	}
+	if cfg.Remote.AntiAbuse.ReportMaxPer10Min != 5 {
+		t.Fatalf("unexpected antiabuse report_max_10m: %d", cfg.Remote.AntiAbuse.ReportMaxPer10Min)
+	}
+	if cfg.Remote.AntiAbuse.NewDeviceRiskWeight != 9 {
+		t.Fatalf("unexpected antiabuse new_device_risk_weight: %d", cfg.Remote.AntiAbuse.NewDeviceRiskWeight)
+	}
 	if cfg.Remote.AdsInject.FreeEvery != 11 {
 		t.Fatalf("unexpected ads free inject: %d", cfg.Remote.AdsInject.FreeEvery)
 	}
@@ -57,6 +67,9 @@ remote:
 	if cfg.Remote.MeDefaults.Timezone != "UTC" {
 		t.Fatalf("unexpected timezone: %s", cfg.Remote.MeDefaults.Timezone)
 	}
+	if cfg.Geo.ExactRetentionHours != 72 {
+		t.Fatalf("unexpected geo.exact_retention_hours override: %d", cfg.Geo.ExactRetentionHours)
+	}
 
 	if !cfg.Remote.Limits.PlusUnlimitedUI {
 		t.Fatalf("plus_unlimited_ui default should stay true")
@@ -69,6 +82,9 @@ remote:
 	}
 	if cfg.Remote.AntiAbuse.ShadowRankMultiplier != 0.4 {
 		t.Fatalf("antiabuse shadow_rank_multiplier default should stay 0.4")
+	}
+	if cfg.Admin.BotRole != "MODERATOR" {
+		t.Fatalf("unexpected admin.bot_role default: %s", cfg.Admin.BotRole)
 	}
 }
 
@@ -92,8 +108,30 @@ func TestLoadDefaultsWhenFileMissing(t *testing.T) {
 	if cfg.Remote.AntiAbuse.SuspectLikeThreshold != 8 {
 		t.Fatalf("unexpected antiabuse suspect_like_threshold: %d", cfg.Remote.AntiAbuse.SuspectLikeThreshold)
 	}
+	if cfg.Remote.AntiAbuse.ReportMaxPer10Min != 3 {
+		t.Fatalf("unexpected antiabuse report_max_10m default: %d", cfg.Remote.AntiAbuse.ReportMaxPer10Min)
+	}
+	if cfg.Remote.AntiAbuse.NewDeviceRiskWeight != 3 {
+		t.Fatalf("unexpected antiabuse new_device_risk_weight default: %d", cfg.Remote.AntiAbuse.NewDeviceRiskWeight)
+	}
 	if len(cfg.Remote.AntiAbuse.CooldownStepsSec) != 5 {
 		t.Fatalf("unexpected antiabuse cooldown steps length: %d", len(cfg.Remote.AntiAbuse.CooldownStepsSec))
+	}
+	if cfg.Admin.BotRole != "MODERATOR" {
+		t.Fatalf("unexpected admin.bot_role default: %s", cfg.Admin.BotRole)
+	}
+	if cfg.Geo.ExactRetentionHours != 48 {
+		t.Fatalf("unexpected geo.exact_retention_hours default: %d", cfg.Geo.ExactRetentionHours)
+	}
+}
+
+func TestLoadRejectsMissingAdminBotTokenInProduction(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("APP_ENV", "prod")
+
+	_, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err == nil {
+		t.Fatalf("expected error when admin.bot_token is empty in production")
 	}
 }
 
@@ -121,6 +159,9 @@ func clearConfigEnv(t *testing.T) {
 		"BOT_TOKEN",
 		"BOT_CLEANUP_INTERVAL",
 		"BOT_CIRCLE_RETENTION",
+		"ADMIN_BOT_TOKEN",
+		"ADMIN_BOT_ROLE",
+		"GEO_EXACT_RETENTION_HOURS",
 	} {
 		t.Setenv(key, "")
 	}

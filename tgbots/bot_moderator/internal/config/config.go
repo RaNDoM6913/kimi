@@ -14,6 +14,10 @@ type Config struct {
 	PollTimeoutSeconds int
 	DatabaseURL        string
 	RedisAddr          string
+	AdminAPIURL        string
+	AdminBotToken      string
+	AdminMode          string
+	AdminHTTPTimeout   int
 	S3Endpoint         string
 	S3AccessKey        string
 	S3SecretKey        string
@@ -32,10 +36,17 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	adminHTTPTimeout, err := getInt([]string{"ADMIN_HTTP_TIMEOUT_SECONDS"}, 8)
+	if err != nil {
+		return Config{}, err
+	}
+
 	s3UseSSL, err := getBool([]string{"S3_USE_SSL"}, false)
 	if err != nil {
 		return Config{}, err
 	}
+
+	adminMode := normalizeAdminMode(getString("ADMIN_MODE", "dual"))
 
 	cfg := Config{
 		BotToken:           strings.TrimSpace(os.Getenv("BOT_TOKEN")),
@@ -44,6 +55,10 @@ func Load() (Config, error) {
 		PollTimeoutSeconds: pollTimeout,
 		DatabaseURL:        strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		RedisAddr:          getString("REDIS_ADDR", "localhost:6379"),
+		AdminAPIURL:        getString("ADMIN_API_URL", ""),
+		AdminBotToken:      getString("ADMIN_BOT_TOKEN", ""),
+		AdminMode:          adminMode,
+		AdminHTTPTimeout:   adminHTTPTimeout,
 		S3Endpoint:         getString("S3_ENDPOINT", ""),
 		S3AccessKey:        getString("S3_ACCESS_KEY", ""),
 		S3SecretKey:        getString("S3_SECRET_KEY", ""),
@@ -54,8 +69,30 @@ func Load() (Config, error) {
 	if cfg.PollTimeoutSeconds <= 0 {
 		cfg.PollTimeoutSeconds = 30
 	}
+	if cfg.AdminHTTPTimeout <= 0 {
+		cfg.AdminHTTPTimeout = 8
+	}
 
 	return cfg, nil
+}
+
+func (c Config) IsHTTPEnabled() bool {
+	return strings.TrimSpace(c.AdminAPIURL) != "" && strings.TrimSpace(c.AdminBotToken) != ""
+}
+
+func (c Config) IsDualMode() bool {
+	return normalizeAdminMode(c.AdminMode) == "dual"
+}
+
+func normalizeAdminMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "db":
+		return "db"
+	case "http":
+		return "http"
+	default:
+		return "dual"
+	}
 }
 
 func getString(key, fallback string) string {

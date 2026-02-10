@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -18,14 +19,19 @@ type Store interface {
 	InsertBatch(ctx context.Context, userID *int64, events []pgrepo.EventWriteRecord) error
 }
 
+type AntiAbuseDashboardObserver interface {
+	ObserveEvent(ctx context.Context, userID *int64, name string, props map[string]any) error
+}
+
 type Config struct {
 	MaxBatchSize int
 }
 
 type Service struct {
-	store Store
-	cfg   Config
-	now   func() time.Time
+	store              Store
+	antiAbuseDashboard AntiAbuseDashboardObserver
+	cfg                Config
+	now                func() time.Time
 }
 
 type BatchEvent struct {
@@ -44,6 +50,10 @@ func NewService(store Store, cfg Config) *Service {
 		cfg:   cfg,
 		now:   time.Now,
 	}
+}
+
+func (s *Service) AttachAntiAbuseDashboard(observer AntiAbuseDashboardObserver) {
+	s.antiAbuseDashboard = observer
 }
 
 func (s *Service) IngestBatch(ctx context.Context, userID *int64, events []BatchEvent) error {
@@ -67,6 +77,12 @@ func (s *Service) IngestBatch(ctx context.Context, userID *int64, events []Batch
 			OccurredAt: parseTS(event.TS, now),
 			Props:      cloneProps(event.Props),
 		})
+
+		if s.antiAbuseDashboard != nil {
+			if err := s.antiAbuseDashboard.ObserveEvent(ctx, userID, name, event.Props); err != nil {
+				log.Printf("warning: observe antiabuse dashboard event failed: %v", err)
+			}
+		}
 	}
 
 	if err := s.store.InsertBatch(ctx, userID, rows); err != nil {

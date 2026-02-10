@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -19,6 +20,8 @@ type Config struct {
 	S3       S3Config       `yaml:"s3"`
 	Auth     AuthConfig     `yaml:"auth"`
 	Bot      BotConfig      `yaml:"bot"`
+	Admin    AdminConfig    `yaml:"admin"`
+	Geo      GeoConfig      `yaml:"geo"`
 	Remote   RemoteConfig   `yaml:"remote"`
 }
 
@@ -63,6 +66,15 @@ type BotConfig struct {
 	CircleRetention time.Duration `yaml:"circle_retention"`
 }
 
+type AdminConfig struct {
+	BotToken string `yaml:"bot_token"`
+	BotRole  string `yaml:"bot_role"`
+}
+
+type GeoConfig struct {
+	ExactRetentionHours int `yaml:"exact_retention_hours"`
+}
+
 type RemoteConfig struct {
 	Limits     LimitsConfig     `yaml:"limits"`
 	AntiAbuse  AntiAbuseConfig  `yaml:"antiabuse"`
@@ -78,12 +90,14 @@ type AntiAbuseConfig struct {
 	LikeMaxPerSec        int     `yaml:"like_max_per_sec"`
 	LikeMax10Sec         int     `yaml:"like_max_10s"`
 	LikeMaxPerMin        int     `yaml:"like_max_min"`
+	ReportMaxPer10Min    int     `yaml:"report_max_10m"`
 	MinCardViewMS        int     `yaml:"min_card_view_ms"`
 	RiskDecayHours       int     `yaml:"risk_decay_hours"`
 	CooldownStepsSec     []int   `yaml:"cooldown_steps_sec"`
 	ShadowThreshold      int     `yaml:"shadow_threshold"`
 	ShadowRankMultiplier float64 `yaml:"shadow_rank_multiplier"`
 	SuspectLikeThreshold int     `yaml:"suspect_like_threshold"`
+	NewDeviceRiskWeight  int     `yaml:"new_device_risk_weight"`
 }
 
 type LimitsConfig struct {
@@ -170,6 +184,13 @@ func Default() Config {
 			CleanupInterval: 6 * time.Hour,
 			CircleRetention: 365 * 24 * time.Hour,
 		},
+		Admin: AdminConfig{
+			BotToken: "",
+			BotRole:  "MODERATOR",
+		},
+		Geo: GeoConfig{
+			ExactRetentionHours: 48,
+		},
 		Remote: RemoteConfig{
 			Limits: LimitsConfig{
 				FreeLikesPerDay:      35,
@@ -182,12 +203,14 @@ func Default() Config {
 				LikeMaxPerSec:        2,
 				LikeMax10Sec:         12,
 				LikeMaxPerMin:        45,
+				ReportMaxPer10Min:    3,
 				MinCardViewMS:        700,
 				RiskDecayHours:       6,
 				CooldownStepsSec:     []int{30, 60, 300, 1800, 86400},
 				ShadowThreshold:      5,
 				ShadowRankMultiplier: 0.4,
 				SuspectLikeThreshold: 8,
+				NewDeviceRiskWeight:  3,
 			},
 			AdsInject: AdsInjectConfig{
 				FreeEvery: 7,
@@ -241,6 +264,9 @@ func Load(path string) (Config, error) {
 	}
 
 	if err := applyEnvOverrides(&cfg); err != nil {
+		return Config{}, err
+	}
+	if err := validate(&cfg); err != nil {
 		return Config{}, err
 	}
 
@@ -333,8 +359,46 @@ func applyEnvOverrides(cfg *Config) error {
 	if err := overrideDuration("BOT_CIRCLE_RETENTION", &cfg.Bot.CircleRetention); err != nil {
 		return err
 	}
+	if v := os.Getenv("ADMIN_BOT_TOKEN"); v != "" {
+		cfg.Admin.BotToken = v
+	}
+	if v := os.Getenv("ADMIN_BOT_ROLE"); v != "" {
+		cfg.Admin.BotRole = v
+	}
+	if err := overrideInt("GEO_EXACT_RETENTION_HOURS", &cfg.Geo.ExactRetentionHours); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func validate(cfg *Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if strings.TrimSpace(cfg.Admin.BotRole) == "" {
+		cfg.Admin.BotRole = "MODERATOR"
+	}
+	if cfg.Geo.ExactRetentionHours <= 0 {
+		cfg.Geo.ExactRetentionHours = 48
+	}
+	if cfg.Remote.AntiAbuse.NewDeviceRiskWeight <= 0 {
+		cfg.Remote.AntiAbuse.NewDeviceRiskWeight = 3
+	}
+
+	if isProdEnv(cfg.Env) && strings.TrimSpace(cfg.Admin.BotToken) == "" {
+		return fmt.Errorf("admin.bot_token is required in production")
+	}
+	return nil
+}
+
+func isProdEnv(env string) bool {
+	switch strings.ToLower(strings.TrimSpace(env)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
 }
 
 func overrideDuration(key string, target *time.Duration) error {

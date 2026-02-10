@@ -20,6 +20,15 @@ func (s *analyticsStoreStub) InsertBatch(_ context.Context, userID *int64, event
 	return nil
 }
 
+type antiAbuseObserverStub struct {
+	names []string
+}
+
+func (s *antiAbuseObserverStub) ObserveEvent(_ context.Context, _ *int64, name string, _ map[string]any) error {
+	s.names = append(s.names, name)
+	return nil
+}
+
 func TestIngestBatchLimitValidation(t *testing.T) {
 	store := &analyticsStoreStub{}
 	svc := NewService(store, Config{MaxBatchSize: 100})
@@ -65,5 +74,29 @@ func TestIngestBatchSavesRows(t *testing.T) {
 	}
 	if !store.events[2].OccurredAt.Equal(fixedNow) {
 		t.Fatalf("unexpected fallback ts: got %v want %v", store.events[2].OccurredAt, fixedNow)
+	}
+}
+
+func TestIngestBatchObservesAntiAbuseEvents(t *testing.T) {
+	store := &analyticsStoreStub{}
+	observer := &antiAbuseObserverStub{}
+	svc := NewService(store, Config{MaxBatchSize: 100})
+	svc.AttachAntiAbuseDashboard(observer)
+
+	uid := int64(10)
+	err := svc.IngestBatch(context.Background(), &uid, []BatchEvent{
+		{Name: "antiabuse_too_fast", TS: 1},
+		{Name: "feed_open", TS: 1},
+		{Name: "antiabuse_shadow_enabled", TS: 1},
+	})
+	if err != nil {
+		t.Fatalf("ingest batch: %v", err)
+	}
+
+	if len(observer.names) != 3 {
+		t.Fatalf("expected observer call per event, got %d", len(observer.names))
+	}
+	if observer.names[0] != "antiabuse_too_fast" || observer.names[2] != "antiabuse_shadow_enabled" {
+		t.Fatalf("unexpected observed events: %+v", observer.names)
 	}
 }

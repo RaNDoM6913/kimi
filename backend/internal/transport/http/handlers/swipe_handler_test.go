@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -74,6 +76,36 @@ func TestSwipeHandlerReturnsTooFastOnThirdLikeBurst(t *testing.T) {
 	}
 }
 
+func TestSwipeHandlerReturnsTempUnavailableOnRedisError(t *testing.T) {
+	rateLimiter := ratesvc.NewLimiter(swipeRateStoreStub{
+		evalErr: errors.New("redis unavailable"),
+	}, 2, 12, 45)
+
+	svc := swipesvc.NewService(swipesvc.Dependencies{
+		RateLimiter: rateLimiter,
+	}, swipesvc.Config{})
+
+	h := NewSwipeHandler(svc)
+	resp := performSwipeRequest(t, h, 1002, "LIKE")
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unexpected status: got %d want %d", resp.Code, http.StatusServiceUnavailable)
+	}
+
+	var payload struct {
+		Code          string `json:"code"`
+		RetryAfterSec int64  `json:"retry_after_sec"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Code != "TEMP_UNAVAILABLE" {
+		t.Fatalf("unexpected error code: got %q want %q", payload.Code, "TEMP_UNAVAILABLE")
+	}
+	if payload.RetryAfterSec != 10 {
+		t.Fatalf("unexpected retry_after_sec: got %d want %d", payload.RetryAfterSec, 10)
+	}
+}
+
 func performSwipeRequest(t *testing.T, h *SwipeHandler, targetID int64, action string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -86,12 +118,26 @@ func performSwipeRequest(t *testing.T, h *SwipeHandler, targetID int64, action s
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/swipe", bytes.NewReader(body))
-	req = req.WithContext(authsvc.WithIdentity(context.Background(), authsvc.Identity{
+	ctx := authsvc.WithIdentity(context.Background(), authsvc.Identity{
 		UserID: 101,
 		SID:    "sid-101",
 		Role:   "user",
-	}))
+	})
+	ctx = authsvc.WithDeviceID(ctx, "7adf6f94-8cd6-4f6f-9b54-c8eaf9f19fbf")
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 	h.Handle(rec, req)
 	return rec
+}
+
+type swipeRateStoreStub struct {
+	evalErr error
+}
+
+func (s swipeRateStoreStub) Eval(context.Context, string, []string, ...interface{}) (interface{}, error) {
+	return nil, s.evalErr
+}
+
+func (s swipeRateStoreStub) WindowState(context.Context, string) (int64, time.Duration, error) {
+	return 0, 0, nil
 }

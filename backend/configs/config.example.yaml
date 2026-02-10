@@ -34,6 +34,13 @@ bot:
   cleanup_interval: 6h
   circle_retention: 8760h
 
+admin:
+  bot_token: ""
+  bot_role: MODERATOR
+
+geo:
+  exact_retention_hours: 48
+
 remote:
   limits:
     free_likes_per_day: 35
@@ -45,12 +52,14 @@ remote:
     like_max_per_sec: 2
     like_max_10s: 12
     like_max_min: 45
+    report_max_10m: 3
     min_card_view_ms: 700
     risk_decay_hours: 6
     cooldown_steps_sec: [30, 60, 300, 1800, 86400]
     shadow_threshold: 5
     shadow_rank_multiplier: 0.4
     suspect_like_threshold: 8
+    new_device_risk_weight: 3
   ads_inject:
     free: 7
     plus: 37

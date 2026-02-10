@@ -257,3 +257,25 @@ LIMIT 1
 
 	return summary, nil
 }
+
+func (r *ProfileRepo) ClearExactGeoOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	if r.pool == nil {
+		return 0, nil
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+UPDATE profiles
+SET
+	last_lat = NULL,
+	last_lon = NULL,
+	updated_at = NOW()
+WHERE last_geo_at IS NOT NULL
+  AND last_geo_at < $1
+  AND (last_lat IS NOT NULL OR last_lon IS NOT NULL)
+`, cutoff.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("clear exact geo older than cutoff: %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}

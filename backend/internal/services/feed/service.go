@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,6 +93,13 @@ type pageCursor struct {
 	Priority  int   `json:"p"`
 	CreatedAt int64 `json:"t"`
 	UserID    int64 `json:"i"`
+}
+
+type candidateRank struct {
+	candidate pgrepo.FeedCandidate
+	shadow    bool
+	score     float64
+	hasScore  bool
 }
 
 func NewService(repo Repository, cfg Config) *Service {
@@ -333,20 +341,88 @@ func (s *Service) demoteShadowCandidates(ctx context.Context, candidates []pgrep
 		return candidates
 	}
 
-	normal := make([]pgrepo.FeedCandidate, 0, len(candidates))
-	shadow := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	ranked := make([]candidateRank, 0, len(candidates))
+	hasRankingScore := true
 	for _, candidate := range candidates {
 		state, err := s.antiAbuse.GetState(ctx, candidate.UserID)
-		if err == nil && state.ShadowEnabled {
-			shadow = append(shadow, candidate)
+		shadow := err == nil && state.ShadowEnabled
+		if candidate.RankScore == nil {
+			hasRankingScore = false
+		}
+		entry := candidateRank{
+			candidate: candidate,
+			shadow:    shadow,
+			hasScore:  candidate.RankScore != nil,
+		}
+		if candidate.RankScore != nil {
+			entry.score = *candidate.RankScore
+			if shadow {
+				entry.score = entry.score * s.cfg.ShadowRankMultiplier
+			}
+		}
+		ranked = append(ranked, entry)
+	}
+
+	if hasRankingScore {
+		sort.SliceStable(ranked, func(i, j int) bool {
+			left := ranked[i]
+			right := ranked[j]
+			if left.score != right.score {
+				return left.score > right.score
+			}
+			if !left.candidate.CreatedAt.Equal(right.candidate.CreatedAt) {
+				return left.candidate.CreatedAt.After(right.candidate.CreatedAt)
+			}
+			return left.candidate.UserID > right.candidate.UserID
+		})
+
+		out := make([]pgrepo.FeedCandidate, 0, len(ranked))
+		for _, item := range ranked {
+			out = append(out, item.candidate)
+		}
+		return out
+	}
+
+	return diluteShadowCandidates(ranked, 5)
+}
+
+func diluteShadowCandidates(candidates []candidateRank, normalBatch int) []pgrepo.FeedCandidate {
+	if normalBatch <= 0 {
+		normalBatch = 5
+	}
+
+	normal := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	shadow := make([]pgrepo.FeedCandidate, 0, len(candidates))
+	for _, item := range candidates {
+		if item.shadow {
+			shadow = append(shadow, item.candidate)
 			continue
 		}
-		normal = append(normal, candidate)
+		normal = append(normal, item.candidate)
 	}
 
 	out := make([]pgrepo.FeedCandidate, 0, len(candidates))
-	out = append(out, normal...)
-	out = append(out, shadow...)
+	normalPos := 0
+	shadowPos := 0
+	for normalPos < len(normal) || shadowPos < len(shadow) {
+		batchEnd := normalPos + normalBatch
+		if batchEnd > len(normal) {
+			batchEnd = len(normal)
+		}
+		if normalPos < batchEnd {
+			out = append(out, normal[normalPos:batchEnd]...)
+			normalPos = batchEnd
+		}
+		if shadowPos < len(shadow) {
+			out = append(out, shadow[shadowPos])
+			shadowPos++
+		}
+		if normalPos >= len(normal) && shadowPos < len(shadow) {
+			out = append(out, shadow[shadowPos:]...)
+			break
+		}
+	}
+
 	return out
 }
 

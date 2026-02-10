@@ -106,21 +106,35 @@ func (s *Service) LogAction(ctx context.Context, actorTGID int64, actorRole enum
 }
 
 func (s *Service) attachSignedMedia(ctx context.Context, user model.LookupUser) (model.LookupUser, error) {
-	photoURLs := make([]string, 0, len(user.PhotoKeys))
+	photoURLs := make([]string, 0, len(user.PhotoURLs)+len(user.PhotoKeys))
+	for _, existing := range user.PhotoURLs {
+		trimmed := strings.TrimSpace(existing)
+		if trimmed == "" {
+			continue
+		}
+		photoURLs = append(photoURLs, trimmed)
+	}
+
 	for _, key := range user.PhotoKeys {
 		url, err := s.signKey(ctx, key)
 		if err != nil {
 			return model.LookupUser{}, err
 		}
 		if strings.TrimSpace(url) != "" {
-			photoURLs = append(photoURLs, url)
+			if !stringSliceContains(photoURLs, url) {
+				photoURLs = append(photoURLs, url)
+			}
 		}
 	}
 	user.PhotoURLs = photoURLs
 
-	circleURL, err := s.signKey(ctx, user.CircleKey)
-	if err != nil {
-		return model.LookupUser{}, err
+	circleURL := strings.TrimSpace(user.CircleURL)
+	if circleURL == "" {
+		var err error
+		circleURL, err = s.signKey(ctx, user.CircleKey)
+		if err != nil {
+			return model.LookupUser{}, err
+		}
 	}
 	user.CircleURL = circleURL
 	return user, nil
@@ -128,8 +142,23 @@ func (s *Service) attachSignedMedia(ctx context.Context, user model.LookupUser) 
 
 func (s *Service) signKey(ctx context.Context, key string) (string, error) {
 	trimmed := strings.TrimSpace(key)
-	if trimmed == "" || s.signer == nil {
+	if trimmed == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed, nil
+	}
+	if s.signer == nil {
 		return "", nil
 	}
 	return s.signer.PresignGet(ctx, trimmed, signedURLTTL)
+}
+
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

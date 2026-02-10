@@ -28,6 +28,11 @@ func (h *AuthHandler) Telegram(w http.ResponseWriter, r *http.Request) {
 		writeInternal(w, "AUTH_SERVICE_UNAVAILABLE", "auth service is unavailable")
 		return
 	}
+	deviceID, ok := requiredDeviceID(r)
+	if !ok {
+		writeBadRequest(w, "VALIDATION_ERROR", "X-Device-Id header is required")
+		return
+	}
 
 	var req dto.TelegramAuthRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -35,7 +40,7 @@ func (h *AuthHandler) Telegram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.service.LoginTelegram(r.Context(), req.InitData)
+	res, err := h.service.LoginTelegram(r.Context(), req.InitData, deviceID)
 	if err != nil {
 		handleAuthError(w, err)
 		return
@@ -155,4 +160,15 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+func requiredDeviceID(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	deviceID, ok := authsvc.DeviceIDFromContext(r.Context())
+	if !ok || deviceID == "" {
+		return "", false
+	}
+	return deviceID, true
 }

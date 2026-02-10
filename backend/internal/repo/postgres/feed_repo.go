@@ -60,6 +60,7 @@ type FeedCandidate struct {
 	City          string
 	Age           int
 	GoalsPriority int
+	RankScore     *float64
 	DistanceKM    *float64
 	CreatedAt     time.Time
 }
@@ -149,6 +150,10 @@ SELECT
 		WHEN $16::boolean = TRUE AND COALESCE(array_length(p.goals, 1), 0) > 0 AND p.goals && $15::text[]
 		THEN 1 ELSE 0
 	END AS goals_priority,
+	CASE
+		WHEN $16::boolean = TRUE AND COALESCE(array_length(p.goals, 1), 0) > 0 AND p.goals && $15::text[]
+		THEN 1.0 ELSE 0.0
+	END AS rank_score,
 	CASE
 		WHEN $11::boolean = TRUE AND p.last_lat IS NOT NULL AND p.last_lon IS NOT NULL
 		THEN 6371.0 * ACOS(LEAST(1.0, GREATEST(-1.0,
@@ -256,6 +261,7 @@ LIMIT $21
 	items := make([]FeedCandidate, 0, q.Limit)
 	for rows.Next() {
 		var item FeedCandidate
+		var rankScore float64
 		if err := rows.Scan(
 			&item.UserID,
 			&item.DisplayName,
@@ -263,11 +269,13 @@ LIMIT $21
 			&item.City,
 			&item.Age,
 			&item.GoalsPriority,
+			&rankScore,
 			&item.DistanceKM,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan feed candidate: %w", err)
 		}
+		item.RankScore = &rankScore
 		items = append(items, item)
 	}
 

@@ -140,11 +140,27 @@ func (h *MatchesHandler) Report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Report(r.Context(), identity.UserID, req.TargetID, req.Reason, req.Details); err != nil {
+	if err := h.service.Report(r.Context(), identity.UserID, req.TargetID, req.Reason, req.Details, identity.Role); err != nil {
 		switch {
 		case errors.Is(err, matchessvc.ErrValidation), errors.Is(err, matchessvc.ErrInvalidReportReason):
 			writeBadRequest(w, "VALIDATION_ERROR", "invalid report request")
 		default:
+			if tu, ok := matchessvc.IsTempUnavailable(err); ok {
+				httperrors.Write(w, http.StatusServiceUnavailable, httperrors.RateLimitError{
+					Code:          "TEMP_UNAVAILABLE",
+					Message:       "service temporarily unavailable",
+					RetryAfterSec: tu.RetryAfter(),
+				})
+				return
+			}
+			if rl, ok := matchessvc.IsTooManyReports(err); ok {
+				httperrors.Write(w, http.StatusTooManyRequests, httperrors.RateLimitError{
+					Code:          "TOO_MANY_REPORTS",
+					Message:       "too many reports, try again later",
+					RetryAfterSec: rl.RetryAfter(),
+				})
+				return
+			}
 			writeInternal(w, "INTERNAL_ERROR", "failed to report user")
 		}
 		return

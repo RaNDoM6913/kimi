@@ -81,6 +81,7 @@ func New(ctx context.Context, cfg config.Config, logger *zap.Logger) (*App, erro
 	profileRepo := pgrepo.NewProfileRepo(pool)
 	moderationService := modsvc.NewService(moderationRepo, profileRepo, mediaRepo, storage)
 	cleanupJob := cleanup.NewCircleCleanupJob(mediaRepo, moderationRepo, storage, cfg.Bot.CircleRetention, logger)
+	cleanupJob.AttachExactGeoCleanup(profileRepo, time.Duration(cfg.Geo.ExactRetentionHours)*time.Hour)
 
 	var bot *tginfra.Bot
 	if strings.TrimSpace(cfg.Bot.Token) != "" {
@@ -316,7 +317,7 @@ func (a *App) handleText(ctx context.Context, update tginfra.TextUpdate) error {
 		return a.bot.SendText(ctx, update.ChatID, "Теперь отправьте required_fix_step.")
 	}
 
-	if err := a.moderationService.Reject(ctx, state.ItemID, state.ModeratorID, state.ReasonText, text); err != nil {
+	if err := a.moderationService.Reject(ctx, state.ItemID, state.ModeratorID, "OTHER", state.ReasonText, text); err != nil {
 		return a.bot.SendText(ctx, update.ChatID, "Не удалось отклонить анкету.")
 	}
 

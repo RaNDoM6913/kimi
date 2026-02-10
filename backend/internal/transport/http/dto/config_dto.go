@@ -14,12 +14,14 @@ type ConfigAntiAbuse struct {
 	LikeMaxPerSec        int     `json:"like_max_per_sec"`
 	LikeMax10Sec         int     `json:"like_max_10s"`
 	LikeMaxPerMin        int     `json:"like_max_min"`
+	ReportMaxPer10Min    int     `json:"report_max_10m"`
 	MinCardViewMS        int     `json:"min_card_view_ms"`
 	RiskDecayHours       int     `json:"risk_decay_hours"`
 	CooldownStepsSec     []int   `json:"cooldown_steps_sec"`
 	ShadowThreshold      int     `json:"shadow_threshold"`
 	ShadowRankMultiplier float64 `json:"shadow_rank_multiplier"`
 	SuspectLikeThreshold int     `json:"suspect_like_threshold"`
+	NewDeviceRiskWeight  int     `json:"new_device_risk_weight"`
 }
 
 type ConfigLimitsResponse struct {

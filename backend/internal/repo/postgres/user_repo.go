@@ -51,6 +51,36 @@ WHERE telegram_id = $1
 	return user, nil
 }
 
+func (r *UserRepo) GetOrCreateByTelegramID(ctx context.Context, telegramID int64) (UserRecord, error) {
+	if telegramID <= 0 {
+		return UserRecord{}, fmt.Errorf("invalid telegram_id")
+	}
+	if r.pool == nil {
+		return UserRecord{
+			ID:         telegramID,
+			TelegramID: telegramID,
+			Role:       "user",
+		}, nil
+	}
+
+	var user UserRecord
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO users (telegram_id, username, role, created_at, updated_at)
+VALUES ($1, '', 'user', NOW(), NOW())
+ON CONFLICT (telegram_id) DO UPDATE SET
+	updated_at = NOW()
+RETURNING id, telegram_id, username, role
+`, telegramID).Scan(&user.ID, &user.TelegramID, &user.Username, &user.Role)
+	if err != nil {
+		return UserRecord{}, fmt.Errorf("get or create user by telegram_id: %w", err)
+	}
+	if strings.TrimSpace(user.Role) == "" {
+		user.Role = "user"
+	}
+
+	return user, nil
+}
+
 func (r *UserRepo) UpdateUsername(ctx context.Context, userID int64, username string) error {
 	if r.pool == nil {
 		return fmt.Errorf("postgres pool is nil")

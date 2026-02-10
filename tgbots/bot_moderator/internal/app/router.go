@@ -12,6 +12,7 @@ import (
 	"bot_moderator/internal/domain/enums"
 	"bot_moderator/internal/domain/model"
 	"bot_moderator/internal/infra/telegram"
+	"bot_moderator/internal/repo/adminhttp"
 	"bot_moderator/internal/services/access"
 	lookupsvc "bot_moderator/internal/services/lookup"
 	moderationsvc "bot_moderator/internal/services/moderation"
@@ -94,6 +95,9 @@ func (a *App) routeUpdate(ctx context.Context, update tgbotapi.Update) {
 func (a *App) routeMessage(ctx context.Context, message *tgbotapi.Message) {
 	if message == nil {
 		return
+	}
+	if message.From != nil {
+		ctx = adminhttp.WithActorTGID(ctx, message.From.ID)
 	}
 
 	if message.IsCommand() {
@@ -470,6 +474,7 @@ func (a *App) handleCallback(ctx context.Context, query *tgbotapi.CallbackQuery)
 	if query == nil || query.From == nil {
 		return
 	}
+	ctx = adminhttp.WithActorTGID(ctx, query.From.ID)
 
 	chatID, ok := callbackChatID(query)
 	if !ok {
