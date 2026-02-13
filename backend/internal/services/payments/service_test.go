@@ -105,6 +105,84 @@ func (s *entitlementStoreStub) ApplyPurchaseSKU(_ context.Context, userID int64,
 	return nil
 }
 
+type paymentTxStoreStub struct {
+	nextID       int
+	byID         map[string]pgrepo.PaymentTransactionRecord
+	byIdem       map[string]string
+	byProviderEv map[string]string
+	grantCount   int
+}
+
+func newPaymentTxStoreStub() *paymentTxStoreStub {
+	return &paymentTxStoreStub{
+		nextID:       1,
+		byID:         make(map[string]pgrepo.PaymentTransactionRecord),
+		byIdem:       make(map[string]string),
+		byProviderEv: make(map[string]string),
+	}
+}
+
+func (s *paymentTxStoreStub) BeginPurchase(
+	_ context.Context,
+	userID int64,
+	provider, productSKU string,
+	amount int,
+	currency, idempotencyKey string,
+) (pgrepo.PaymentTransactionRecord, bool, error) {
+	if txID, ok := s.byIdem[idempotencyKey]; ok {
+		return s.byID[txID], false, nil
+	}
+	id := fmt.Sprintf("tx-%d", s.nextID)
+	s.nextID++
+	now := time.Now().UTC()
+	rec := pgrepo.PaymentTransactionRecord{
+		ID:             id,
+		UserID:         userID,
+		Provider:       provider,
+		IdempotencyKey: idempotencyKey,
+		Amount:         amount,
+		Currency:       currency,
+		ProductSKU:     productSKU,
+		Status:         "PENDING",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	s.byID[id] = rec
+	s.byIdem[idempotencyKey] = id
+	return rec, true, nil
+}
+
+func (s *paymentTxStoreStub) ConfirmPayment(
+	_ context.Context,
+	provider, providerEventID string,
+	_ map[string]any,
+	_ time.Time,
+) (pgrepo.PaymentTransactionRecord, bool, error) {
+	key := provider + "|" + providerEventID
+	if txID, ok := s.byProviderEv[key]; ok {
+		rec := s.byID[txID]
+		if rec.Status == "SUCCEEDED" {
+			return rec, true, nil
+		}
+	}
+
+	txID, ok := s.byIdem[providerEventID]
+	if !ok {
+		return pgrepo.PaymentTransactionRecord{}, false, pgrepo.ErrPaymentTransactionNotFound
+	}
+	rec := s.byID[txID]
+	if rec.Status == "SUCCEEDED" {
+		return rec, true, nil
+	}
+	rec.Status = "SUCCEEDED"
+	rec.ProviderEventID = &providerEventID
+	rec.UpdatedAt = time.Now().UTC()
+	s.byID[txID] = rec
+	s.byProviderEv[key] = txID
+	s.grantCount++
+	return rec, false, nil
+}
+
 func TestConfirmWebhookIdempotentByProviderTxID(t *testing.T) {
 	purchases := newPurchaseStoreStub()
 	entitlements := &entitlementStoreStub{}
@@ -161,5 +239,68 @@ func TestConfirmWebhookIdempotentByProviderTxID(t *testing.T) {
 	}
 	if entitlements.lastSKU != "reveal_1" {
 		t.Fatalf("unexpected sku applied: %s", entitlements.lastSKU)
+	}
+}
+
+func TestBeginPurchaseIdempotentByKey(t *testing.T) {
+	txStore := newPaymentTxStoreStub()
+	svc := NewService(Dependencies{
+		PaymentTransactions: txStore,
+	})
+
+	first, err := svc.BeginPurchase(context.Background(), 101, "tg_stars", "superlike_3", 199, "BYN", "idem-1")
+	if err != nil {
+		t.Fatalf("first begin purchase: %v", err)
+	}
+	if first.TransactionID == "" || first.Idempotent {
+		t.Fatalf("first begin should create tx and be non-idempotent: %+v", first)
+	}
+
+	second, err := svc.BeginPurchase(context.Background(), 101, "tg_stars", "superlike_3", 199, "BYN", "idem-1")
+	if err != nil {
+		t.Fatalf("second begin purchase: %v", err)
+	}
+	if second.TransactionID != first.TransactionID {
+		t.Fatalf("expected same transaction id for idempotent begin, got %s vs %s", second.TransactionID, first.TransactionID)
+	}
+	if !second.Idempotent {
+		t.Fatalf("second begin must be idempotent")
+	}
+}
+
+func TestConfirmPaymentIdempotentGrantOnce(t *testing.T) {
+	txStore := newPaymentTxStoreStub()
+	svc := NewService(Dependencies{
+		PaymentTransactions: txStore,
+	})
+
+	begin, err := svc.BeginPurchase(context.Background(), 101, "external", "plus_month", 1299, "BYN", "evt-42")
+	if err != nil {
+		t.Fatalf("begin purchase: %v", err)
+	}
+	if begin.TransactionID == "" {
+		t.Fatalf("expected transaction id")
+	}
+
+	first, err := svc.ConfirmPayment(context.Background(), "external", "evt-42", map[string]any{"raw": true})
+	if err != nil {
+		t.Fatalf("first confirm payment: %v", err)
+	}
+	if first.Idempotent {
+		t.Fatalf("first confirm must not be idempotent")
+	}
+	if txStore.grantCount != 1 {
+		t.Fatalf("expected single grant on first confirm, got %d", txStore.grantCount)
+	}
+
+	second, err := svc.ConfirmPayment(context.Background(), "external", "evt-42", map[string]any{"raw": true})
+	if err != nil {
+		t.Fatalf("second confirm payment: %v", err)
+	}
+	if !second.Idempotent {
+		t.Fatalf("second confirm must be idempotent")
+	}
+	if txStore.grantCount != 1 {
+		t.Fatalf("grant should not repeat, got %d", txStore.grantCount)
 	}
 }

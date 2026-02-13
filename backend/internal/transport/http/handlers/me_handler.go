@@ -93,6 +93,7 @@ func (h *MeHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			TGID:      identity.UserID,
 			Username:  username,
 			Role:      identity.Role,
+			Zodiac:    nil,
 			IsPlus:    h.remote.MeDefaults.IsPlus,
 			PlusUntil: plusUntil,
 			CityID:    h.remote.MeDefaults.CityID,

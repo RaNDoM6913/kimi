@@ -15,6 +15,7 @@ type MeUserPublicResponse struct {
 	TGID      int64      `json:"tg_id"`
 	Username  string     `json:"username"`
 	Role      string     `json:"role"`
+	Zodiac    *string    `json:"zodiac,omitempty"`
 	IsPlus    bool       `json:"is_plus"`
 	PlusUntil *time.Time `json:"plus_until"`
 	CityID    string     `json:"city_id"`

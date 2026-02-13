@@ -9,3 +9,15 @@ type MediaPhotoResponse struct {
 type MediaPhotosListResponse struct {
 	Items []MediaPhotoResponse `json:"items"`
 }
+
+type CandidatePhotoResponse struct {
+	Slot int    `json:"slot"`
+	URL  string `json:"url"`
+	W    *int   `json:"w"`
+	H    *int   `json:"h"`
+}
+
+type CandidatePhotosResponse struct {
+	UserID int64                    `json:"user_id"`
+	Photos []CandidatePhotoResponse `json:"photos"`
+}

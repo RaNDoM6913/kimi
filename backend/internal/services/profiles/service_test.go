@@ -138,4 +138,7 @@ func TestUpdateCoreMarksProfileCompleted(t *testing.T) {
 	if len(store.lastCall.languages) != 2 {
 		t.Fatalf("expected deduplicated languages length=2, got %d", len(store.lastCall.languages))
 	}
+	if store.lastCall.zodiac != "pisces" {
+		t.Fatalf("expected zodiac computed from birthdate, got %q want %q", store.lastCall.zodiac, "pisces")
+	}
 }

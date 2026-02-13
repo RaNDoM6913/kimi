@@ -177,6 +177,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FeedResponse'
+  /v1/candidates/{user_id}/profile:
+    get:
+      tags: [Tabs]
+      summary: Candidate profile by user id (v1)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Candidate profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidateProfileResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/candidates/{user_id}/media/photos:
+    get:
+      tags: [Tabs]
+      summary: Candidate photos by user id (v1)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Candidate photos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CandidatePhotosResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /feed:
     get:
       tags: [Tabs]
@@ -844,6 +888,13 @@ components:
           type: string
         age:
           type: integer
+        zodiac:
+          type: string
+        primary_goal:
+          type: string
+        primary_photo_url:
+          type: string
+          nullable: true
         city_id:
           type: string
         city:
@@ -851,6 +902,101 @@ components:
         distance_km:
           type: number
       required: [is_ad]
+
+    CandidateBadges:
+      type: object
+      properties:
+        is_plus:
+          type: boolean
+      required: [is_plus]
+
+    CandidateProfileResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        age:
+          type: integer
+        zodiac:
+          type: string
+        city_id:
+          type: string
+        city:
+          type: string
+        distance_km:
+          type: number
+        bio:
+          type: string
+          nullable: true
+        occupation:
+          type: string
+        education:
+          type: string
+        height_cm:
+          type: integer
+        eye_color:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string
+        goals:
+          type: array
+          items:
+            type: string
+        is_travel:
+          type: boolean
+        travel_city:
+          type: string
+          nullable: true
+        badges:
+          $ref: '#/components/schemas/CandidateBadges'
+      required:
+        [
+          user_id,
+          display_name,
+          age,
+          city_id,
+          city,
+          occupation,
+          education,
+          height_cm,
+          eye_color,
+          languages,
+          goals,
+          is_travel,
+          badges
+        ]
+
+    CandidatePhoto:
+      type: object
+      properties:
+        slot:
+          type: integer
+        url:
+          type: string
+        w:
+          type: integer
+          nullable: true
+        h:
+          type: integer
+          nullable: true
+      required: [slot, url, w, h]
+
+    CandidatePhotosResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          format: int64
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidatePhoto'
+      required: [user_id, photos]
 
     AdCard:
       type: object

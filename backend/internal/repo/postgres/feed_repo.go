@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,7 @@ import (
 )
 
 var ErrFeedViewerNotFound = errors.New("feed viewer profile not found")
+var ErrFeedCandidateNotFound = errors.New("feed candidate not found")
 
 type FeedRepo struct {
 	pool *pgxpool.Pool
@@ -53,11 +55,39 @@ type FeedQuery struct {
 	Now              time.Time
 }
 
+type CandidateProfileQuery struct {
+	ViewerUserID    int64
+	CandidateUserID int64
+	Now             time.Time
+}
+
+type CandidateProfileRecord struct {
+	UserID      int64
+	DisplayName string
+	Age         int
+	Zodiac      string
+	CityID      string
+	City        string
+	DistanceKM  *float64
+	Bio         *string
+	Occupation  string
+	Education   string
+	HeightCM    int
+	EyeColor    string
+	Languages   []string
+	Goals       []string
+	IsPlus      bool
+}
+
 type FeedCandidate struct {
 	UserID        int64
 	DisplayName   string
 	CityID        string
 	City          string
+	Zodiac        string
+	Birthdate     *time.Time
+	PrimaryPhoto  string
+	PrimaryGoal   string
 	Age           int
 	GoalsPriority int
 	RankScore     *float64
@@ -145,6 +175,10 @@ SELECT
 	p.display_name,
 	COALESCE(p.city_id, ''),
 	COALESCE(p.city, ''),
+	COALESCE(p.zodiac, ''),
+	p.birthdate,
+	COALESCE(pm.s3_key, ''),
+	COALESCE(p.goals[1], ''),
 	DATE_PART('year', AGE($2::timestamptz, p.birthdate::timestamp))::int AS age,
 	CASE
 		WHEN $16::boolean = TRUE AND COALESCE(array_length(p.goals, 1), 0) > 0 AND p.goals && $15::text[]
@@ -164,6 +198,16 @@ SELECT
 	END AS distance_km,
 	p.created_at
 FROM profiles p
+LEFT JOIN LATERAL (
+	SELECT m.s3_key
+	FROM media m
+	WHERE
+		m.user_id = p.user_id
+		AND m.kind = 'photo'
+		AND m.status = 'active'
+	ORDER BY m.position ASC, m.created_at ASC
+	LIMIT 1
+) pm ON TRUE
 WHERE
 	p.approved = TRUE
 	AND p.user_id <> $1
@@ -267,6 +311,10 @@ LIMIT $21
 			&item.DisplayName,
 			&item.CityID,
 			&item.City,
+			&item.Zodiac,
+			&item.Birthdate,
+			&item.PrimaryPhoto,
+			&item.PrimaryGoal,
 			&item.Age,
 			&item.GoalsPriority,
 			&rankScore,
@@ -284,6 +332,121 @@ LIMIT $21
 	}
 
 	return items, nil
+}
+
+func (r *FeedRepo) GetCandidateProfile(ctx context.Context, q CandidateProfileQuery) (CandidateProfileRecord, error) {
+	if q.ViewerUserID <= 0 || q.CandidateUserID <= 0 {
+		return CandidateProfileRecord{}, fmt.Errorf("invalid candidate profile query")
+	}
+	if q.Now.IsZero() {
+		q.Now = time.Now().UTC()
+	}
+	if q.ViewerUserID == q.CandidateUserID {
+		return CandidateProfileRecord{}, ErrFeedCandidateNotFound
+	}
+	if r.pool == nil {
+		return CandidateProfileRecord{}, ErrFeedCandidateNotFound
+	}
+
+	var (
+		record   CandidateProfileRecord
+		bio      sql.NullString
+		heightCM int16
+		distance sql.NullFloat64
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT
+	p.user_id,
+	COALESCE(NULLIF(BTRIM(p.display_name), ''), ''),
+	COALESCE(DATE_PART('year', AGE($3::timestamptz, p.birthdate::timestamp))::int, 0),
+	COALESCE(p.zodiac, ''),
+	COALESCE(p.city_id, ''),
+	COALESCE(p.city, ''),
+	CASE
+		WHEN vp.last_lat IS NOT NULL AND vp.last_lon IS NOT NULL
+			AND p.last_lat IS NOT NULL AND p.last_lon IS NOT NULL
+		THEN 6371.0 * ACOS(LEAST(1.0, GREATEST(-1.0,
+			COS(RADIANS(vp.last_lat)) * COS(RADIANS(p.last_lat)) * COS(RADIANS(p.last_lon) - RADIANS(vp.last_lon))
+			+ SIN(RADIANS(vp.last_lat)) * SIN(RADIANS(p.last_lat))
+		)))
+		ELSE NULL
+	END AS distance_km,
+	NULLIF(BTRIM(p.bio), '') AS bio,
+	COALESCE(p.occupation, ''),
+	COALESCE(p.education, ''),
+	COALESCE(p.height_cm, 0)::smallint,
+	COALESCE(p.eye_color, ''),
+	COALESCE(p.languages, '{}'::text[]),
+	COALESCE(p.goals, '{}'::text[]),
+	COALESCE(e.plus_expires_at > $3::timestamptz, FALSE) AS is_plus
+FROM profiles p
+LEFT JOIN profiles vp ON vp.user_id = $1
+LEFT JOIN entitlements e ON e.user_id = p.user_id
+LEFT JOIN user_bans ub ON ub.user_id = (
+	'00000000-0000-0000-0000-' ||
+	LPAD(TO_HEX((p.user_id & 281474976710655)::bigint), 12, '0')
+)::uuid
+WHERE
+	p.user_id = $2
+	AND p.approved = TRUE
+	AND p.birthdate IS NOT NULL
+	AND COALESCE(ub.banned, FALSE) = FALSE
+	AND NOT EXISTS (
+		SELECT 1
+		FROM blocks b
+		WHERE
+			(b.actor_user_id = $1 AND b.target_user_id = p.user_id)
+			OR (b.actor_user_id = p.user_id AND b.target_user_id = $1)
+	)
+	AND NOT EXISTS (
+		SELECT 1
+		FROM dislikes_state ds
+		WHERE
+			ds.actor_user_id = $1
+			AND ds.target_user_id = p.user_id
+			AND (
+				COALESCE(ds.never_show, FALSE) = TRUE
+				OR COALESCE(ds.hide_until, ds.until_at) > $3::timestamptz
+			)
+	)
+LIMIT 1
+`, q.ViewerUserID, q.CandidateUserID, q.Now.UTC()).Scan(
+		&record.UserID,
+		&record.DisplayName,
+		&record.Age,
+		&record.Zodiac,
+		&record.CityID,
+		&record.City,
+		&distance,
+		&bio,
+		&record.Occupation,
+		&record.Education,
+		&heightCM,
+		&record.EyeColor,
+		&record.Languages,
+		&record.Goals,
+		&record.IsPlus,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CandidateProfileRecord{}, ErrFeedCandidateNotFound
+		}
+		return CandidateProfileRecord{}, fmt.Errorf("get candidate profile: %w", err)
+	}
+
+	record.HeightCM = int(heightCM)
+	if bio.Valid {
+		value := strings.TrimSpace(bio.String)
+		if value != "" {
+			record.Bio = &value
+		}
+	}
+	if distance.Valid {
+		value := distance.Float64
+		record.DistanceKM = &value
+	}
+
+	return record, nil
 }
 
 func normalizeGoals(goals []string) []string {

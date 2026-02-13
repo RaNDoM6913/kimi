@@ -62,6 +62,7 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	moderationHandler := handlers.NewModerationHandler(deps.ModerationService)
 	quotaHandler := handlers.NewQuotaHandler(deps.LikeService)
 	feedHandler := handlers.NewFeedHandler(deps.FeedService)
+	candidateHandler := handlers.NewCandidateHandler(deps.FeedService, deps.MediaService, deps.AnalyticsService)
 	swipeHandler := handlers.NewSwipeHandler(deps.SwipeService)
 	rewindHandler := handlers.NewRewindHandler(deps.SwipeService)
 	boostHandler := handlers.NewBoostHandler()
@@ -82,6 +83,7 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	adminHealthRoleMW := RequireRole("OWNER", "SUPPORT", "MODERATOR")
 	adminPrivateRoleMW := RequireRole("OWNER", "SUPPORT")
 	adminMetricsRoleMW := RequireRole("OWNER", "SUPPORT")
+	devPayRoleMW := RequireRole("OWNER")
 	adminBotAuthMW := AdminBotAuthMiddleware(deps.Config.Admin, deps.Logger)
 	adminBotNotImplemented := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		httperrors.Write(w, http.StatusNotImplemented, httperrors.APIError{
@@ -131,6 +133,8 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	r.With(authMW).Post("/purchase/create", purchaseHandler.Create)
 	r.Post("/purchase/webhook", purchaseHandler.Webhook)
 	r.With(authMW).Get("/entitlements", purchaseHandler.Entitlements)
+	r.With(authMW, devPayRoleMW).Post("/pay/dev/begin", purchaseHandler.DevBegin)
+	r.With(authMW, devPayRoleMW).Post("/pay/dev/confirm", purchaseHandler.DevConfirm)
 	r.Post("/events/batch", eventsHandler.Batch)
 
 	r.Route("/auth", func(r chi.Router) {
@@ -161,6 +165,8 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 		r.With(authMW).Get("/moderation/status", moderationHandler.Handle)
 		r.With(authMW).Get("/quota", quotaHandler.Handle)
 		r.With(authMW).Get("/feed", feedHandler.Handle)
+		r.With(authMW).Get("/candidates/{user_id}/profile", candidateHandler.Profile)
+		r.With(authMW).Get("/candidates/{user_id}/media/photos", candidateHandler.Photos)
 		r.With(authMW).Post("/swipes", swipeHandler.Handle)
 		r.With(authMW).Post("/rewind", rewindHandler.Handle)
 		r.Post("/boost", boostHandler.Handle)
@@ -181,6 +187,8 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 		r.With(authMW).Post("/purchase/create", purchaseHandler.Create)
 		r.Post("/purchase/webhook", purchaseHandler.Webhook)
 		r.With(authMW).Get("/entitlements", purchaseHandler.Entitlements)
+		r.With(authMW, devPayRoleMW).Post("/pay/dev/begin", purchaseHandler.DevBegin)
+		r.With(authMW, devPayRoleMW).Post("/pay/dev/confirm", purchaseHandler.DevConfirm)
 		r.Post("/events", eventsHandler.Handle)
 		r.Post("/events/batch", eventsHandler.Batch)
 	})

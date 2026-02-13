@@ -54,7 +54,6 @@ func (h *ProfileHandler) Core(w http.ResponseWriter, r *http.Request) {
 		Education:  req.Education,
 		HeightCM:   req.HeightCM,
 		EyeColor:   req.EyeColor,
-		Zodiac:     req.Zodiac,
 		Languages:  req.Languages,
 		Goals:      req.Goals,
 	})

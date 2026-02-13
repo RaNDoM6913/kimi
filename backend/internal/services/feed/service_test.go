@@ -15,6 +15,8 @@ type feedRepoStub struct {
 	viewerErr error
 	items     []pgrepo.FeedCandidate
 	lastQuery pgrepo.FeedQuery
+	candidate pgrepo.CandidateProfileRecord
+	candErr   error
 }
 
 func float64ptr(v float64) *float64 {
@@ -69,6 +71,16 @@ func (s *feedRepoStub) ListCandidates(_ context.Context, q pgrepo.FeedQuery) ([]
 	out := make([]pgrepo.FeedCandidate, 0, limit)
 	out = append(out, s.items[:limit]...)
 	return out, nil
+}
+
+func (s *feedRepoStub) GetCandidateProfile(_ context.Context, _ pgrepo.CandidateProfileQuery) (pgrepo.CandidateProfileRecord, error) {
+	if s.candErr != nil {
+		return pgrepo.CandidateProfileRecord{}, s.candErr
+	}
+	if s.candidate.UserID <= 0 {
+		return pgrepo.CandidateProfileRecord{}, pgrepo.ErrFeedCandidateNotFound
+	}
+	return s.candidate, nil
 }
 
 func TestGetUsesDefaultsAndReturnsNextCursor(t *testing.T) {
@@ -335,5 +347,47 @@ func TestGetDilutesShadowCandidatesWhenScoreIsMissing(t *testing.T) {
 		if result.Items[i].UserID != userID {
 			t.Fatalf("unexpected dilution order at index %d: got %d want %d", i, result.Items[i].UserID, userID)
 		}
+	}
+}
+
+func TestGetCandidateProfileReturnsMappedData(t *testing.T) {
+	repo := &feedRepoStub{
+		candidate: pgrepo.CandidateProfileRecord{
+			UserID:      55,
+			DisplayName: "Alice",
+			Age:         25,
+			Zodiac:      "aries",
+			CityID:      "minsk",
+			City:        "Minsk",
+			Occupation:  "Designer",
+			Education:   "BSU",
+			HeightCM:    172,
+			EyeColor:    "brown",
+			Languages:   []string{"ru", "en"},
+			Goals:       []string{"relationship"},
+			IsPlus:      true,
+		},
+	}
+	service := NewService(repo, Config{})
+
+	got, err := service.GetCandidateProfile(context.Background(), 10, 55)
+	if err != nil {
+		t.Fatalf("get candidate profile: %v", err)
+	}
+	if got.UserID != 55 || got.Zodiac != "aries" {
+		t.Fatalf("unexpected candidate profile payload: %+v", got)
+	}
+	if !got.Badges.IsPlus {
+		t.Fatalf("expected plus badge to be true")
+	}
+}
+
+func TestGetCandidateProfileNotFound(t *testing.T) {
+	repo := &feedRepoStub{candErr: pgrepo.ErrFeedCandidateNotFound}
+	service := NewService(repo, Config{})
+
+	_, err := service.GetCandidateProfile(context.Background(), 10, 77)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

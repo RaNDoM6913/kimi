@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ivankudzin/tgapp/backend/internal/domain/rules"
 )
 
 var (
@@ -109,7 +111,7 @@ func normalizeAndValidateInput(now time.Time, in CoreInput) (CoreInput, error) {
 		Education:  strings.TrimSpace(in.Education),
 		HeightCM:   in.HeightCM,
 		EyeColor:   strings.ToLower(strings.TrimSpace(in.EyeColor)),
-		Zodiac:     strings.ToLower(strings.TrimSpace(in.Zodiac)),
+		Zodiac:     rules.ZodiacFromBirthdate(in.Birthdate),
 	}
 
 	if out.Gender == "" || out.LookingFor == "" || out.Occupation == "" || out.Education == "" || out.EyeColor == "" || out.Zodiac == "" {

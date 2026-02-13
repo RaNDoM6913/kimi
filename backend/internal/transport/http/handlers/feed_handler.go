@@ -70,6 +70,9 @@ func (h *FeedHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			responseItem.UserID = item.UserID
 			responseItem.DisplayName = item.DisplayName
 			responseItem.Age = item.Age
+			responseItem.Zodiac = item.Zodiac
+			responseItem.PrimaryGoal = item.PrimaryGoal
+			responseItem.PrimaryPhotoURL = &dto.NullableString{Value: item.PrimaryPhotoURL}
 			responseItem.CityID = item.CityID
 			responseItem.City = item.City
 			responseItem.DistanceKM = item.DistanceKM

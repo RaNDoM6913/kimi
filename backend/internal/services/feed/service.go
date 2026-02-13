@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ivankudzin/tgapp/backend/internal/domain/rules"
 	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
 	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
 )
@@ -17,16 +18,19 @@ import (
 const (
 	defaultPageSize = 20
 	maxPageSize     = 50
+	feedPhotoURLTTL = 5 * time.Minute
 )
 
 var (
 	ErrValidation    = errors.New("validation error")
 	ErrInvalidCursor = errors.New("invalid cursor")
+	ErrNotFound      = errors.New("not found")
 )
 
 type Repository interface {
 	GetViewerContext(ctx context.Context, userID int64) (pgrepo.FeedViewerContext, error)
 	ListCandidates(ctx context.Context, q pgrepo.FeedQuery) ([]pgrepo.FeedCandidate, error)
+	GetCandidateProfile(ctx context.Context, q pgrepo.CandidateProfileQuery) (pgrepo.CandidateProfileRecord, error)
 }
 
 type AdStore interface {
@@ -35,6 +39,10 @@ type AdStore interface {
 
 type PlusStore interface {
 	IsPlusActive(ctx context.Context, userID int64, at time.Time) (bool, *time.Time, error)
+}
+
+type PhotoURLSigner interface {
+	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
 type AntiAbuseStore interface {
@@ -60,6 +68,7 @@ type Service struct {
 	cfg       Config
 	adStore   AdStore
 	plusStore PlusStore
+	photoSign PhotoURLSigner
 	antiAbuse AntiAbuseStore
 	adsCfg    AdsConfig
 	now       func() time.Time
@@ -74,19 +83,46 @@ type AdCard struct {
 }
 
 type Item struct {
-	IsAd        bool
-	Ad          *AdCard
-	UserID      int64
-	DisplayName string
-	CityID      string
-	City        string
-	Age         int
-	DistanceKM  *float64
+	IsAd            bool
+	Ad              *AdCard
+	UserID          int64
+	DisplayName     string
+	CityID          string
+	City            string
+	Zodiac          string
+	PrimaryGoal     string
+	PrimaryPhotoURL *string
+	Age             int
+	DistanceKM      *float64
 }
 
 type Result struct {
 	Items      []Item
 	NextCursor string
+}
+
+type CandidateBadges struct {
+	IsPlus bool
+}
+
+type CandidateProfile struct {
+	UserID      int64
+	DisplayName string
+	Age         int
+	Zodiac      string
+	CityID      string
+	City        string
+	DistanceKM  *float64
+	Bio         *string
+	Occupation  string
+	Education   string
+	HeightCM    int
+	EyeColor    string
+	Languages   []string
+	Goals       []string
+	IsTravel    bool
+	TravelCity  *string
+	Badges      CandidateBadges
 }
 
 type pageCursor struct {
@@ -144,6 +180,10 @@ func (s *Service) AttachAds(adStore AdStore, plusStore PlusStore, cfg AdsConfig)
 	s.adStore = adStore
 	s.plusStore = plusStore
 	s.adsCfg = cfg
+}
+
+func (s *Service) AttachPhotoSigner(signer PhotoURLSigner) {
+	s.photoSign = signer
 }
 
 func (s *Service) Get(ctx context.Context, userID int64, cursor string, limit int) (Result, error) {
@@ -209,13 +249,21 @@ func (s *Service) Get(ctx context.Context, userID int64, cursor string, limit in
 
 	items := make([]Item, 0, len(candidates))
 	for _, candidate := range candidates {
+		zodiac := strings.TrimSpace(candidate.Zodiac)
+		if zodiac == "" && candidate.Birthdate != nil {
+			zodiac = rules.ZodiacFromBirthdate(candidate.Birthdate.UTC())
+		}
+
 		items = append(items, Item{
-			UserID:      candidate.UserID,
-			DisplayName: candidate.DisplayName,
-			CityID:      candidate.CityID,
-			City:        candidate.City,
-			Age:         candidate.Age,
-			DistanceKM:  candidate.DistanceKM,
+			UserID:          candidate.UserID,
+			DisplayName:     candidate.DisplayName,
+			CityID:          candidate.CityID,
+			City:            candidate.City,
+			Zodiac:          zodiac,
+			PrimaryGoal:     strings.TrimSpace(candidate.PrimaryGoal),
+			PrimaryPhotoURL: s.buildPhotoURL(ctx, candidate.PrimaryPhoto),
+			Age:             candidate.Age,
+			DistanceKM:      candidate.DistanceKM,
 		})
 	}
 
@@ -236,6 +284,49 @@ func (s *Service) Get(ctx context.Context, userID int64, cursor string, limit in
 	}
 
 	return result, nil
+}
+
+func (s *Service) GetCandidateProfile(ctx context.Context, viewerUserID, candidateUserID int64) (CandidateProfile, error) {
+	if viewerUserID <= 0 || candidateUserID <= 0 || viewerUserID == candidateUserID {
+		return CandidateProfile{}, ErrValidation
+	}
+	if s.repo == nil {
+		return CandidateProfile{}, fmt.Errorf("feed repository is nil")
+	}
+
+	record, err := s.repo.GetCandidateProfile(ctx, pgrepo.CandidateProfileQuery{
+		ViewerUserID:    viewerUserID,
+		CandidateUserID: candidateUserID,
+		Now:             s.now().UTC(),
+	})
+	if err != nil {
+		if errors.Is(err, pgrepo.ErrFeedCandidateNotFound) {
+			return CandidateProfile{}, ErrNotFound
+		}
+		return CandidateProfile{}, err
+	}
+
+	return CandidateProfile{
+		UserID:      record.UserID,
+		DisplayName: record.DisplayName,
+		Age:         record.Age,
+		Zodiac:      record.Zodiac,
+		CityID:      record.CityID,
+		City:        record.City,
+		DistanceKM:  record.DistanceKM,
+		Bio:         record.Bio,
+		Occupation:  record.Occupation,
+		Education:   record.Education,
+		HeightCM:    record.HeightCM,
+		EyeColor:    record.EyeColor,
+		Languages:   append([]string(nil), record.Languages...),
+		Goals:       append([]string(nil), record.Goals...),
+		IsTravel:    false,
+		TravelCity:  nil,
+		Badges: CandidateBadges{
+			IsPlus: record.IsPlus,
+		},
+	}, nil
 }
 
 func (s *Service) injectAds(ctx context.Context, userID int64, cityID string, items []Item) []Item {
@@ -311,6 +402,30 @@ func (s *Service) resolvePlus(ctx context.Context, userID int64, at time.Time) (
 	}
 
 	return s.adsCfg.DefaultIsPlus, nil
+}
+
+func (s *Service) buildPhotoURL(ctx context.Context, key string) *string {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		value := trimmed
+		return &value
+	}
+	if s.photoSign == nil {
+		return nil
+	}
+
+	url, err := s.photoSign.PresignGet(ctx, trimmed, feedPhotoURLTTL)
+	if err != nil {
+		return nil
+	}
+	value := strings.TrimSpace(url)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func normalizeAgeRange(ageMin, ageMax, defaultMin, defaultMax int) (int, int) {

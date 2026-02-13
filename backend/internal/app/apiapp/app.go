@@ -79,6 +79,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	entitlementRepo := pgrepo.NewEntitlementRepo(pool)
 	eventRepo := pgrepo.NewEventRepo(pool)
 	purchaseRepo := pgrepo.NewPurchaseRepo(pool)
+	paymentTxRepo := pgrepo.NewPaymentTransactionRepo(pool)
 	userRepo := pgrepo.NewUserRepo(pool)
 	userDeviceRepo := pgrepo.NewUserDeviceRepo(pool)
 	jwtManager := authsvc.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
@@ -103,8 +104,9 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		DefaultIsPlus: cfg.Remote.MeDefaults.IsPlus,
 	})
 	paymentService := paymentsvc.NewService(paymentsvc.Dependencies{
-		Purchases:    purchaseRepo,
-		Entitlements: entitlementRepo,
+		Purchases:           purchaseRepo,
+		Entitlements:        entitlementRepo,
+		PaymentTransactions: paymentTxRepo,
 	})
 	antiAbuseService := antiabusesvc.NewService(riskRepo, antiabusesvc.Config{
 		RiskDecayHours:   cfg.Remote.AntiAbuse.RiskDecayHours,
@@ -115,6 +117,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		MaxBatchSize: 100,
 	})
 	analyticsService.AttachAntiAbuseDashboard(antiAbuseDashboardRepo)
+	paymentService.AttachTelemetry(analyticsService)
 	antiAbuseService.AttachTelemetry(analyticsService)
 	feedService.AttachAntiAbuse(antiAbuseService, cfg.Remote.AntiAbuse.ShadowRankMultiplier)
 	profileService := profilesvc.NewService(profileRepo)
@@ -187,6 +190,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 
 	mediaStorage := mediasvc.NewS3Storage(s3Client, cfg.S3.Bucket)
 	mediaService := mediasvc.NewService(mediaRepo, mediaStorage)
+	feedService.AttachPhotoSigner(mediaStorage)
 	moderationService := modsvc.NewService(moderationRepo, profileRepo, mediaRepo, mediaStorage)
 	moderationService.AttachDailyMetrics(dailyMetricsRepo)
 	userService := userssvc.NewService(pool, mediaRepo, mediaStorage)

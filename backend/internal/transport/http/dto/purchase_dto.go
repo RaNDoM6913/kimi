@@ -46,3 +46,27 @@ type EntitlementsResponse struct {
 type PurchaseRequest = PurchaseCreateRequest
 
 type PurchaseResponse = PurchaseCreateResponse
+
+type PayDevBeginRequest struct {
+	Provider       string `json:"provider"`
+	ProductSKU     string `json:"product_sku"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type PayDevBeginResponse struct {
+	TransactionID string `json:"transaction_id"`
+	Status        string `json:"status"`
+	Idempotent    bool   `json:"idempotent"`
+}
+
+type PayDevConfirmRequest struct {
+	Provider        string                 `json:"provider"`
+	ProviderEventID string                 `json:"provider_event_id"`
+	Payload         map[string]interface{} `json:"payload,omitempty"`
+}
+
+type PayDevConfirmResponse struct {
+	TransactionID string `json:"transaction_id"`
+	Status        string `json:"status"`
+	Idempotent    bool   `json:"idempotent"`
+}
