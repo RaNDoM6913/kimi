@@ -369,22 +369,6 @@ export function UsersPage() {
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">Users</h2>
-          <p className="text-sm text-[#A7B1C8]">Manage and monitor user accounts</p>
-        </div>
-        <button
-          onClick={handleAddUser}
-          disabled={!canEditUsers}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <span className="text-lg">+</span>
-          Add User
-        </button>
-      </div>
-
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[

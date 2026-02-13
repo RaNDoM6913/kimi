@@ -7,7 +7,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { overviewKPIs, growthChartData, alerts } from '@/data/mockData';
+import {
+  overviewKPIs,
+  growthChartData,
+  alerts,
+  revenueTrendChartDataWeekly,
+  revenueTrendChartDataMonthly,
+} from '@/data/mockData';
 import { TrendingUp, AlertTriangle, Check, Info, AlertCircle, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Alert as AlertType } from '@/types';
@@ -55,6 +61,39 @@ function getGrowthSubtitle(period: GrowthPeriod): string {
   }
 }
 
+function getRevenueChartDataByPeriod(period: GrowthPeriod): ChartDataPoint[] {
+  switch (period) {
+    case '1d':
+      return revenueTrendChartDataWeekly.slice(-1);
+    case '7d':
+    case '1m':
+      return revenueTrendChartDataWeekly;
+    case '3m':
+      return revenueTrendChartDataMonthly.slice(-3);
+    case '12m':
+      return revenueTrendChartDataMonthly;
+    default:
+      return revenueTrendChartDataWeekly;
+  }
+}
+
+function getRevenueSubtitle(period: GrowthPeriod): string {
+  switch (period) {
+    case '1d':
+      return 'Revenue over the last day';
+    case '7d':
+      return 'Daily revenue this week';
+    case '1m':
+      return 'Daily revenue over the last 30 days';
+    case '3m':
+      return 'Revenue over the last 3 months';
+    case '12m':
+      return 'Revenue over the last 12 months';
+    default:
+      return 'Daily revenue over the last 30 days';
+  }
+}
+
 function AlertItem({ alert }: { alert: AlertType }) {
   const getIcon = (type: AlertType['type']) => {
     switch (type) {
@@ -95,10 +134,16 @@ function AlertItem({ alert }: { alert: AlertType }) {
 
 export function OverviewPage() {
   const [growthPeriod, setGrowthPeriod] = useState<GrowthPeriod>('1m');
+  const [revenuePeriod, setRevenuePeriod] = useState<GrowthPeriod>('1m');
 
   const growthDataByPeriod = useMemo(
     () => getGrowthChartDataByPeriod(growthChartData, growthPeriod),
     [growthPeriod]
+  );
+
+  const revenueDataByPeriod = useMemo(
+    () => getRevenueChartDataByPeriod(revenuePeriod),
+    [revenuePeriod]
   );
 
   return (
@@ -220,25 +265,41 @@ export function OverviewPage() {
           style={{ animationDelay: '720ms' }}
         >
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-[#F5F7FF]">Revenue Trend</h3>
-              <p className="text-sm text-[#A7B1C8]">Daily revenue this week</p>
+            <div className="flex items-center gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-[#F5F7FF]">Revenue Trend</h3>
+                <p className="text-sm text-[#A7B1C8]">{getRevenueSubtitle(revenuePeriod)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#7B61FF]" />
+                <span className="text-sm text-[#7B61FF]">+8.1%</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#7B61FF]" />
-              <span className="text-sm text-[#7B61FF]">+8.1%</span>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-sm text-[#7B61FF] hover:underline outline-none"
+                >
+                  {GROWTH_PERIOD_LABELS[revenuePeriod]}
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[8rem] bg-[#0E1320] border-[#1E2636]">
+                {(['1d', '7d', '1m', '3m', '12m'] as const).map((period) => (
+                  <DropdownMenuItem
+                    key={period}
+                    onClick={() => setRevenuePeriod(period)}
+                    className="text-[#F5F7FF] focus:bg-[rgba(123,97,255,0.15)] focus:text-[#F5F7FF]"
+                  >
+                    {GROWTH_PERIOD_LABELS[period]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <LineChartCard 
-            data={[
-              { name: 'Mon', value: 38500 },
-              { name: 'Tue', value: 39200 },
-              { name: 'Wed', value: 40100 },
-              { name: 'Thu', value: 39800 },
-              { name: 'Fri', value: 41500 },
-              { name: 'Sat', value: 43800 },
-              { name: 'Sun', value: 42180 },
-            ]}
+            data={revenueDataByPeriod}
             dataKeys={['value']}
             colors={['#7B61FF']}
             showArea

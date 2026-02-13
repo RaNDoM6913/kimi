@@ -15,6 +15,7 @@ import { ADMIN_PERMISSIONS, type AdminPermission } from '@/admin/permissions';
 import { DEFAULT_ADMIN_ROLE, isAdminRole, type AdminRole } from '@/admin/roles';
 import { PermissionsProvider } from '@/admin/usePermissions';
 import { ProtectedRoute } from '@/components/admin/ProtectedRoute';
+import { cn } from '@/lib/utils';
 
 const pageTitles: Record<string, string> = {
   overview: 'Overview',
@@ -57,6 +58,7 @@ function resolveInitialRole(): AdminRole {
 
 function AppShell() {
   const [activePage, setActivePage] = useState('overview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const renderProtectedPage = (permission: AdminPermission, page: ReactElement) => (
     <ProtectedRoute permission={permission}>{page}</ProtectedRoute>
@@ -95,10 +97,20 @@ function AppShell() {
       <div className="noise-overlay" />
 
       {/* Sidebar */}
-      <Sidebar activePage={activePage} onPageChange={setActivePage} />
+      <Sidebar
+        activePage={activePage}
+        onPageChange={setActivePage}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+      />
 
-      {/* Main Content */}
-      <div className="flex-1 ml-64 flex flex-col">
+      {/* Main Content — margin matches sidebar width (w-20 = 80px, w-64 = 256px) */}
+      <div
+        className={cn(
+          'flex-1 flex flex-col transition-[margin] duration-300',
+          sidebarCollapsed ? 'ml-20' : 'ml-64',
+        )}
+      >
         {/* Top Bar */}
         <TopBar pageTitle={pageTitles[activePage] ?? 'Dashboard'} />
 

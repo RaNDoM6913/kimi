@@ -39,6 +39,32 @@ export const growthChartData: ChartDataPoint[] = [
   { name: 'Dec', value: 105000, value2: 88000 },
 ];
 
+// Revenue trend chart (weekly + monthly for period filter)
+export const revenueTrendChartDataWeekly: ChartDataPoint[] = [
+  { name: 'Mon', value: 38500 },
+  { name: 'Tue', value: 39200 },
+  { name: 'Wed', value: 40100 },
+  { name: 'Thu', value: 39800 },
+  { name: 'Fri', value: 41500 },
+  { name: 'Sat', value: 43800 },
+  { name: 'Sun', value: 42180 },
+];
+
+export const revenueTrendChartDataMonthly: ChartDataPoint[] = [
+  { name: 'Jan', value: 118000 },
+  { name: 'Feb', value: 125000 },
+  { name: 'Mar', value: 132000 },
+  { name: 'Apr', value: 128000 },
+  { name: 'May', value: 138000 },
+  { name: 'Jun', value: 142000 },
+  { name: 'Jul', value: 148000 },
+  { name: 'Aug', value: 145000 },
+  { name: 'Sep', value: 152000 },
+  { name: 'Oct', value: 158000 },
+  { name: 'Nov', value: 162000 },
+  { name: 'Dec', value: 168000 },
+];
+
 // Alerts data
 export const alerts: Alert[] = [
   { id: '1', type: 'warning', title: 'High Report Volume', message: 'Photo reports are 23% above normal in the last hour', timestamp: '5 min ago', isRead: false },

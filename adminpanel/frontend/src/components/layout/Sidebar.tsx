@@ -22,6 +22,8 @@ import { usePermissions } from '@/admin/usePermissions';
 interface SidebarProps {
   activePage: string;
   onPageChange: (page: string) => void;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 interface NavItem {
@@ -45,8 +47,18 @@ const navItems: NavItem[] = [
   { id: 'settings', label: 'Settings', icon: Settings, permission: ADMIN_PERMISSIONS.change_limits },
 ];
 
-export function Sidebar({ activePage, onPageChange }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function Sidebar({ activePage, onPageChange, collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const isControlled = onCollapsedChange != null;
+  const collapsed = isControlled ? (collapsedProp ?? false) : internalCollapsed;
+
+  const setCollapsed = (value: boolean) => {
+    if (isControlled) {
+      onCollapsedChange?.(value);
+    } else {
+      setInternalCollapsed(value);
+    }
+  };
   const { hasPermission, role } = usePermissions();
 
   const visibleNavItems = useMemo(
@@ -57,7 +69,7 @@ export function Sidebar({ activePage, onPageChange }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 h-screen bg-[#0E1320] border-r border-[rgba(123,97,255,0.12)] flex flex-col transition-all duration-300 z-50',
+        'fixed left-0 top-0 h-screen bg-[#0E1320] border-r border-[rgba(123,97,255,0.12)] flex flex-col transition-[width] duration-300 z-50',
         collapsed ? 'w-20' : 'w-64',
       )}
     >
@@ -119,35 +131,41 @@ export function Sidebar({ activePage, onPageChange }: SidebarProps) {
         )}
       </nav>
 
-      {/* Collapse Button */}
-      <div className="p-3 border-t border-[rgba(123,97,255,0.12)]">
+      {/* Collapse Button — fixed height so nav doesn't reflow on expand */}
+      <div className="flex-shrink-0 p-3 border-t border-[rgba(123,97,255,0.12)]">
         <button
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="w-full flex items-center justify-center p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.08)] hover:text-[#F5F7FF] transition-colors"
         >
           {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
         </button>
       </div>
 
-      {/* Admin Profile */}
-      {!collapsed && (
-        <div className="p-4 border-t border-[rgba(123,97,255,0.12)]">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <img
-                src="https://i.pravatar.cc/150?u=admin"
-                alt="Admin"
-                className="w-10 h-10 rounded-full border-2 border-[rgba(123,97,255,0.25)]"
-              />
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-[#2DD4A8] rounded-full border-2 border-[#0E1320]" />
-            </div>
+      {/* Admin Profile — min-height so height doesn't change on expand, nav doesn't jump */}
+      <div
+        className={cn(
+          'flex-shrink-0 min-h-[73px] border-t border-[rgba(123,97,255,0.12)] flex items-center p-3',
+          collapsed ? 'justify-center' : 'pl-5 pr-3',
+        )}
+      >
+        <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
+          <div className="relative flex-shrink-0">
+            <img
+              src="https://i.pravatar.cc/150?u=admin"
+              alt="Admin"
+              className="w-10 h-10 rounded-full border-2 border-[rgba(123,97,255,0.25)]"
+            />
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-[#2DD4A8] rounded-full border-2 border-[#0E1320]" />
+          </div>
+          {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-[#F5F7FF] truncate">Alex Morgan</p>
               <p className="text-xs text-[#A7B1C8] truncate">{role}</p>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </aside>
   );
 }
