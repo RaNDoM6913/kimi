@@ -5,6 +5,7 @@ import {
   AlertTriangle, 
   Ban, 
   ChevronRight,
+  ChevronLeft,
   Image as ImageIcon,
   MessageSquare,
   Filter,
@@ -69,6 +70,7 @@ interface ModerationCase {
   status: ModerationStatus;
   priority: ModerationPriority;
   createdAtLabel: string;
+  createdAtTs: number;
 
   title: string;
   preview: string;
@@ -103,6 +105,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'high',
     createdAtLabel: '5m ago',
+    createdAtTs: 1760572500000,
     title: 'Onboarding profile review: Anna Kim',
     preview: 'Profile completed with 3 photos and full bio fields.',
     user: {
@@ -144,6 +147,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '14m ago',
+    createdAtTs: 1760571960000,
     title: 'Onboarding photos check: Maksim D',
     preview: 'Photo set passed blur check, waiting final decision.',
     user: {
@@ -186,6 +190,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'waiting',
     priority: 'low',
     createdAtLabel: '33m ago',
+    createdAtTs: 1760570820000,
     title: 'Onboarding bio verification: Elena P',
     preview: 'Short bio requires language policy check.',
     user: {
@@ -227,6 +232,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'escalated',
     priority: 'high',
     createdAtLabel: '48m ago',
+    createdAtTs: 1760569920000,
     title: 'Age verification required: Lina S',
     preview: 'Age confidence check dropped below threshold.',
     user: {
@@ -269,6 +275,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '1h ago',
+    createdAtTs: 1760569200000,
     title: 'Onboarding profile review: Victor M',
     preview: 'Complete profile, city and language fields verified.',
     user: {
@@ -310,6 +317,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'high',
     createdAtLabel: '1h ago',
+    createdAtTs: 1760569199000,
     title: 'Onboarding photos check: Kate V',
     preview: 'One photo requires explicit-content revalidation.',
     user: {
@@ -352,6 +360,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'high',
     createdAtLabel: '3m ago',
+    createdAtTs: 1760572620000,
     title: 'Reported photo in feed card',
     preview: 'Reported for explicit content by another user.',
     user: {
@@ -380,6 +389,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '12m ago',
+    createdAtTs: 1760572080000,
     title: 'Bio reported for external links',
     preview: 'Bio likely contains promotional outbound links.',
     user: {
@@ -409,6 +419,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'escalated',
     priority: 'high',
     createdAtLabel: '26m ago',
+    createdAtTs: 1760571240000,
     title: 'Direct message reported for harassment',
     preview: 'Reported conversation includes repeated insults.',
     user: {
@@ -437,6 +448,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'waiting',
     priority: 'high',
     createdAtLabel: '42m ago',
+    createdAtTs: 1760570280000,
     title: 'Photo reported for possible underage subject',
     preview: 'Reporter claims profile uses school-age photos.',
     user: {
@@ -466,6 +478,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'med',
     createdAtLabel: '52m ago',
+    createdAtTs: 1760569680000,
     title: 'Message reported for spam links',
     preview: 'Conversation contains suspicious referral links.',
     user: {
@@ -494,6 +507,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'done',
     priority: 'low',
     createdAtLabel: '2h ago',
+    createdAtTs: 1760565600000,
     title: 'Bio reported for off-topic promotion',
     preview: 'Promotion text previously removed, case closed.',
     user: {
@@ -522,6 +536,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'in_review',
     priority: 'high',
     createdAtLabel: '18m ago',
+    createdAtTs: 1760571720000,
     title: 'Payment charged but premium not activated',
     preview: 'Telegram support bot forwarded billing complaint.',
     user: {
@@ -557,6 +572,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'med',
     createdAtLabel: '22m ago',
+    createdAtTs: 1760571480000,
     title: 'Cannot login after Telegram reconnect',
     preview: 'User gets session expired error on each launch.',
     user: {
@@ -589,6 +605,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'waiting',
     priority: 'med',
     createdAtLabel: '34m ago',
+    createdAtTs: 1760570760000,
     title: 'Likes screen freezes on scroll',
     preview: 'Client reports UI freeze in Telegram webview.',
     user: {
@@ -624,6 +641,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'escalated',
     priority: 'high',
     createdAtLabel: '47m ago',
+    createdAtTs: 1760569980000,
     title: 'Stalking concern after profile match',
     preview: 'User asks for urgent safety action and block audit.',
     user: {
@@ -661,6 +679,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'new',
     priority: 'low',
     createdAtLabel: '58m ago',
+    createdAtTs: 1760569320000,
     title: 'Question about profile badge meaning',
     preview: 'General support question from Telegram bot.',
     user: {
@@ -693,6 +712,7 @@ const unifiedCases: ModerationCase[] = [
     status: 'waiting',
     priority: 'med',
     createdAtLabel: '1h ago',
+    createdAtTs: 1760569198000,
     title: 'Refund request after accidental renewal',
     preview: 'User requests refund under grace period.',
     user: {
@@ -759,12 +779,6 @@ const subTypeTabs: Record<Exclude<ModerationViewType, 'all'>, Array<{ value: str
   ],
 };
 
-const priorityOrder: Record<ModerationPriority, number> = {
-  high: 0,
-  med: 1,
-  low: 2,
-};
-
 const priorityClass: Record<ModerationPriority, string> = {
   high: 'bg-[rgba(255,107,107,0.15)] text-[#FF6B6B]',
   med: 'bg-[rgba(255,209,102,0.15)] text-[#FFD166]',
@@ -786,7 +800,12 @@ function filterCases({ cases, selectedType, selectedSubType, query }: FilterCase
 
   return [...cases]
     .filter((caseItem) => selectedType === 'all' || caseItem.type === selectedType)
-    .filter((caseItem) => !selectedSubType || caseItem.subType === selectedSubType)
+    .filter(
+      (caseItem) =>
+        !selectedSubType ||
+        (selectedType !== 'report' && selectedType !== 'support') ||
+        caseItem.subType === selectedSubType
+    )
     .filter((caseItem) => {
       if (!normalizedQuery) {
         return true;
@@ -800,13 +819,7 @@ function filterCases({ cases, selectedType, selectedSubType, query }: FilterCase
         caseItem.user.name,
       ].some((field) => field.toLowerCase().includes(normalizedQuery));
     })
-    .sort((a, b) => {
-      const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-      return a.createdAtLabel.localeCompare(b.createdAtLabel);
-    });
+    .sort((a, b) => a.createdAtTs - b.createdAtTs);
 }
 
 let moderationCasesSnapshot: ModerationCase[] = unifiedCases;
@@ -926,7 +939,10 @@ function FiltersBar({
   query: string;
   onChangeQuery: (value: string) => void;
 }) {
-  const activeSubTabs = selectedType === 'all' ? [] : subTypeTabs[selectedType];
+  const activeSubTabs =
+    selectedType === 'report' || selectedType === 'support'
+      ? subTypeTabs[selectedType]
+      : [];
 
   return (
     <div className="p-3 border-b border-[rgba(123,97,255,0.12)] space-y-2">
@@ -1011,70 +1027,98 @@ function QueueList({
       {cases.length === 0 ? (
         <div className="p-6 text-center text-sm text-[#A7B1C8]">No cases matched current filters</div>
       ) : (
-        cases.map((caseItem) => (
-          <button
-            key={caseItem.id}
-            onClick={() => onSelectCase(caseItem.id)}
-            className={cn(
-              'w-full p-4 text-left border-b border-[rgba(123,97,255,0.08)] transition-colors',
-              selectedCaseId === caseItem.id
-                ? 'bg-[rgba(123,97,255,0.1)]'
-                : 'hover:bg-[rgba(123,97,255,0.05)]'
-            )}
-          >
-            <div className="flex items-start gap-3">
-              {caseItem.user.avatar ? (
-                <img
-                  src={caseItem.user.avatar}
-                  alt={caseItem.user.name}
-                  className="w-12 h-12 rounded-lg object-cover border border-[rgba(123,97,255,0.2)]"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-lg bg-[rgba(123,97,255,0.1)] flex items-center justify-center text-sm text-[#B7A9FF]">
-                  {caseItem.user.name.slice(0, 1).toUpperCase()}
-                </div>
+        cases.map((caseItem) => {
+          const isOnboarding = caseItem.type === 'onboarding';
+
+          return (
+            <button
+              key={caseItem.id}
+              onClick={() => onSelectCase(caseItem.id)}
+              className={cn(
+                'w-full p-4 text-left border-b border-[rgba(123,97,255,0.08)] transition-colors',
+                selectedCaseId === caseItem.id
+                  ? 'bg-[rgba(123,97,255,0.1)]'
+                  : 'hover:bg-[rgba(123,97,255,0.05)]'
               )}
-
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-[#F5F7FF] truncate">{caseItem.title}</p>
-                  <span className="text-xs text-[#A7B1C8] shrink-0">{caseItem.createdAtLabel}</span>
-                </div>
-
-                <p className="text-xs text-[#A7B1C8] line-clamp-2">{caseItem.preview}</p>
-
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
-                    {caseItem.type}/{caseItem.subType}
-                  </span>
-                  <span className={cn('px-1.5 py-0.5 rounded text-[10px] uppercase', priorityClass[caseItem.priority])}>
-                    {caseItem.priority}
-                  </span>
-                  {caseItem.type === 'support' && caseItem.slaLabel && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
-                      {caseItem.slaLabel}
-                    </span>
-                  )}
-                  {(caseItem.tags ?? []).slice(0, 2).map((tag) => (
-                    <span
-                      key={`${caseItem.id}_${tag}`}
-                      className="px-1.5 py-0.5 rounded text-[10px] border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <ChevronRight
-                className={cn(
-                  'w-4 h-4 text-[#A7B1C8] flex-shrink-0',
-                  selectedCaseId === caseItem.id && 'text-[#7B61FF]'
+            >
+              <div className="flex items-start gap-3">
+                {caseItem.user.avatar ? (
+                  <img
+                    src={caseItem.user.avatar}
+                    alt={caseItem.user.name}
+                    className="w-12 h-12 rounded-lg object-cover border border-[rgba(123,97,255,0.2)]"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-[rgba(123,97,255,0.1)] flex items-center justify-center text-sm text-[#B7A9FF]">
+                    {caseItem.user.name.slice(0, 1).toUpperCase()}
+                  </div>
                 )}
-              />
-            </div>
-          </button>
-        ))
+
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-[#F5F7FF] truncate">
+                      {isOnboarding ? 'Onboarding review' : caseItem.title}
+                    </p>
+                    <span className="text-xs text-[#A7B1C8] shrink-0">{caseItem.createdAtLabel}</span>
+                  </div>
+
+                  <p className="text-xs text-[#A7B1C8] line-clamp-2">
+                    {isOnboarding ? 'New profile submitted for review.' : caseItem.preview}
+                  </p>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {isOnboarding ? (
+                      <>
+                        <span className="px-3 py-1 rounded-lg text-xs bg-[rgba(123,97,255,0.14)] border border-[rgba(123,97,255,0.25)] text-[#CFC6FF]">
+                          ONBOARDING
+                        </span>
+                        <span
+                          className={cn(
+                            'px-2 py-1 rounded-lg text-[11px] border',
+                            caseItem.id === selectedCaseId
+                              ? 'bg-[rgba(123,97,255,0.16)] border-[rgba(123,97,255,0.25)] text-[#E7E3FF]'
+                              : 'bg-[rgba(245,247,255,0.06)] border-[rgba(245,247,255,0.10)] text-[#A7B1C8]'
+                          )}
+                        >
+                          {caseItem.id === selectedCaseId ? 'IN REVIEW' : 'NEW'}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
+                          {caseItem.type}/{caseItem.subType}
+                        </span>
+                        <span className={cn('px-1.5 py-0.5 rounded text-[10px] uppercase', priorityClass[caseItem.priority])}>
+                          {caseItem.priority}
+                        </span>
+                        {caseItem.type === 'support' && caseItem.slaLabel && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
+                            {caseItem.slaLabel}
+                          </span>
+                        )}
+                        {(caseItem.tags ?? []).slice(0, 2).map((tag) => (
+                          <span
+                            key={`${caseItem.id}_${tag}`}
+                            className="px-1.5 py-0.5 rounded text-[10px] border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <ChevronRight
+                  className={cn(
+                    'w-4 h-4 text-[#A7B1C8] flex-shrink-0',
+                    selectedCaseId === caseItem.id && 'text-[#7B61FF]'
+                  )}
+                />
+              </div>
+            </button>
+          );
+        })
       )}
     </div>
   );
@@ -1131,11 +1175,13 @@ function DetailPanel({
   onAction,
   canAction,
   onSendSupportReply,
+  onOpenViewer,
 }: {
   caseItem: ModerationCase | null;
   onAction: (action: ModerationAction) => void;
   canAction: (action: ModerationAction) => boolean;
   onSendSupportReply: (caseId: string, text: string) => void;
+  onOpenViewer: (photos: string[], startIndex: number) => void;
 }) {
   type DetailTab = 'evidence' | 'user' | 'history' | 'notes';
 
@@ -1211,26 +1257,29 @@ function DetailPanel({
 
       return (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 grid-rows-2 gap-2 h-64">
+          <div className="grid grid-cols-3 grid-rows-2 gap-2 h-52">
             {mainPhoto && (
               <img
                 src={mainPhoto}
                 alt="Onboarding primary"
-                className="col-span-2 row-span-2 h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)]"
+                onClick={() => onOpenViewer(caseItem.onboarding!.photos, 0)}
+                className="col-span-2 row-span-2 h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)] cursor-pointer hover:opacity-95 transition"
               />
             )}
             {secondPhoto && (
               <img
                 src={secondPhoto}
                 alt="Onboarding secondary"
-                className="h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)]"
+                onClick={() => onOpenViewer(caseItem.onboarding!.photos, 1)}
+                className="h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)] cursor-pointer hover:opacity-95 transition"
               />
             )}
             {thirdPhoto && (
               <img
                 src={thirdPhoto}
                 alt="Onboarding tertiary"
-                className="h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)]"
+                onClick={() => onOpenViewer(caseItem.onboarding!.photos, 2)}
+                className="h-full w-full object-cover rounded-xl border border-[rgba(123,97,255,0.2)] cursor-pointer hover:opacity-95 transition"
               />
             )}
           </div>
@@ -1263,23 +1312,6 @@ function DetailPanel({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">Auto-flags</p>
-            <div className="flex flex-wrap gap-2">
-              {(caseItem.tags ?? []).length > 0 ? (
-                (caseItem.tags ?? []).map((tag) => (
-                  <span
-                    key={`${caseItem.id}_autoflag_${tag}`}
-                    className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
-                  >
-                    {tag}
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-[#A7B1C8]">No auto-flags</span>
-              )}
-            </div>
-          </div>
         </div>
       );
     }
@@ -1599,8 +1631,47 @@ export function ModerationPage() {
   const [selectedSubType, setSelectedSubType] = useState('');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(unifiedCases[0]?.id ?? null);
   const [query, setQuery] = useState('');
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerPhotos, setViewerPhotos] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
   const { hasPermission, role } = usePermissions();
   const totalPending = cases.length;
+
+  const openViewer = (photos: string[], startIndex: number) => {
+    if (photos.length === 0) {
+      return;
+    }
+
+    setViewerPhotos(photos);
+    setViewerIndex(startIndex);
+    setViewerOpen(true);
+  };
+
+  const closeViewer = () => {
+    setViewerOpen(false);
+    setViewerPhotos([]);
+    setViewerIndex(0);
+  };
+
+  const nextViewer = () => {
+    setViewerIndex((prev) => {
+      if (viewerPhotos.length === 0) {
+        return 0;
+      }
+
+      return (prev + 1) % viewerPhotos.length;
+    });
+  };
+
+  const prevViewer = () => {
+    setViewerIndex((prev) => {
+      if (viewerPhotos.length === 0) {
+        return 0;
+      }
+
+      return (prev - 1 + viewerPhotos.length) % viewerPhotos.length;
+    });
+  };
 
   const countsByType = getCountsByType(cases);
   const filteredCases = filterCases({ cases, selectedType, selectedSubType, query });
@@ -1611,18 +1682,39 @@ export function ModerationPage() {
   }, [cases, totalPending]);
 
   useEffect(() => {
-    if (filteredCases.length === 0) {
-      if (selectedCaseId !== null) {
-        setSelectedCaseId(null);
-      }
+    if (!selectedCaseId) {
+      setSelectedCaseId(filteredCases[0]?.id ?? null);
       return;
     }
 
-    const hasSelection = selectedCaseId && filteredCases.some((caseItem) => caseItem.id === selectedCaseId);
-    if (!hasSelection) {
-      setSelectedCaseId(filteredCases[0].id);
+    const stillExists = filteredCases.some((caseItem) => caseItem.id === selectedCaseId);
+    if (!stillExists) {
+      setSelectedCaseId(filteredCases[0]?.id ?? null);
     }
-  }, [filteredCases, selectedCaseId]);
+  }, [selectedType, selectedSubType, query, cases]);
+
+  useEffect(() => {
+    if (!viewerOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeViewer();
+      }
+
+      if (event.key === 'ArrowRight') {
+        nextViewer();
+      }
+
+      if (event.key === 'ArrowLeft') {
+        prevViewer();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [viewerOpen, viewerPhotos.length]);
 
   const canAction = (action: ModerationAction) => hasPermission(actionPermissions[action]);
 
@@ -1631,25 +1723,29 @@ export function ModerationPage() {
       return;
     }
 
-    const actionName = `moderation_${action}`;
-
     logAdminAction(
-      `${actionName}|caseId:${selectedCase.id}|type:${selectedCase.type}|subType:${selectedCase.subType}|userId:${selectedCase.user.id}`,
+      `moderation_${action}`,
       { id: 'current-admin', role },
       '127.0.0.1',
       getClientDevice(),
     );
 
-    const remainingCases = cases.filter((caseItem) => caseItem.id !== selectedCase.id);
-    setCases(remainingCases);
+    setCases((prevCases) => {
+      const nextCases = prevCases.filter((caseItem) => caseItem.id !== selectedCase.id);
+      const nextFilteredCases = filterCases({
+        cases: nextCases,
+        selectedType,
+        selectedSubType,
+        query,
+      });
+      const nextSelectedCaseId = nextFilteredCases[0]?.id ?? null;
 
-    const remainingFilteredCases = filterCases({
-      cases: remainingCases,
-      selectedType,
-      selectedSubType,
-      query,
+      queueMicrotask(() => {
+        setSelectedCaseId(nextSelectedCaseId);
+      });
+
+      return nextCases;
     });
-    setSelectedCaseId(remainingFilteredCases[0]?.id ?? null);
   };
 
   const handleSelectType = (type: ModerationViewType) => {
@@ -1715,8 +1811,76 @@ export function ModerationPage() {
           onAction={handleAction}
           canAction={canAction}
           onSendSupportReply={handleSendSupportReply}
+          onOpenViewer={openViewer}
         />
       </div>
+
+      {viewerOpen && viewerPhotos.length > 0 && (
+        <div
+          className="fixed inset-0 z-[100] bg-[rgba(6,8,14,0.82)] backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeViewer}
+        >
+          <div
+            className="relative w-full max-w-4xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="absolute -top-10 right-0 px-3 py-2 rounded-lg bg-[rgba(14,19,32,0.8)] border border-[rgba(123,97,255,0.2)] text-[#F5F7FF] text-sm hover:bg-[rgba(123,97,255,0.12)]"
+              onClick={closeViewer}
+            >
+              Close (Esc)
+            </button>
+
+            <div className="relative rounded-2xl overflow-hidden border border-[rgba(123,97,255,0.2)] bg-[rgba(14,19,32,0.6)]">
+              <img
+                src={viewerPhotos[viewerIndex]}
+                alt="Preview"
+                className="w-full max-h-[78vh] object-contain"
+              />
+
+              {viewerPhotos.length > 1 && (
+                <button
+                  onClick={prevViewer}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[rgba(14,19,32,0.75)] border border-[rgba(123,97,255,0.2)] flex items-center justify-center text-[#F5F7FF] hover:bg-[rgba(123,97,255,0.14)]"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              )}
+
+              {viewerPhotos.length > 1 && (
+                <button
+                  onClick={nextViewer}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[rgba(14,19,32,0.75)] border border-[rgba(123,97,255,0.2)] flex items-center justify-center text-[#F5F7FF] hover:bg-[rgba(123,97,255,0.14)]"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+
+              {viewerPhotos.length > 1 && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
+                  {viewerPhotos.map((_, index) => (
+                    <button
+                      key={`dot_${index}`}
+                      onClick={() => setViewerIndex(index)}
+                      className={cn(
+                        'w-2.5 h-2.5 rounded-full border border-[rgba(123,97,255,0.35)]',
+                        index === viewerIndex ? 'bg-[rgba(123,97,255,0.9)]' : 'bg-[rgba(245,247,255,0.12)]'
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-xs text-[#A7B1C8]">
+              <span>
+                {viewerIndex + 1} / {viewerPhotos.length}
+              </span>
+              <span>Use ← → to navigate</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
