@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Search, 
   Filter, 
@@ -12,8 +13,10 @@ import {
   Flag,
   Calendar,
   MapPin,
-  Mail,
-  Clock
+  Clock,
+  Phone,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { users } from '@/data/mockData';
@@ -28,11 +31,176 @@ const statusConfig = {
   offline: { bg: 'bg-[rgba(167,177,200,0.15)]', text: 'text-[#A7B1C8]', dot: 'bg-[#A7B1C8]' },
 };
 
-function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }) {
+type InteractionType = 'matches' | 'likes_sent' | 'likes_received';
+
+const defaultInterests = [
+  'Travel',
+  'Music',
+  'Fitness',
+  'Coffee',
+  'Photography',
+  'Hiking',
+  'Movies',
+  'Cooking',
+  'Reading',
+  'Art',
+];
+
+function formatJoinedLabel(joined: string): string {
+  const joinedDate = new Date(`${joined}T00:00:00`);
+  if (Number.isNaN(joinedDate.getTime())) {
+    return joined;
+  }
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfJoined = new Date(
+    joinedDate.getFullYear(),
+    joinedDate.getMonth(),
+    joinedDate.getDate(),
+  );
+
+  const daysSinceJoin = Math.max(
+    0,
+    Math.floor((startOfToday.getTime() - startOfJoined.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+
+  const dd = String(startOfJoined.getDate()).padStart(2, '0');
+  const mm = String(startOfJoined.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(startOfJoined.getFullYear());
+  const dayLabel = daysSinceJoin === 1 ? 'day' : 'days';
+
+  return `${daysSinceJoin} ${dayLabel} • ${dd}.${mm}.${yyyy}`;
+}
+
+function stableHash(value: string): number {
+  return value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+}
+
+function resolveLikesSent(user: User): number {
+  if (typeof user.likesSent === 'number') {
+    return user.likesSent;
+  }
+  return Math.max(1, Math.round(user.likes * 0.62));
+}
+
+function resolveHeight(user: User): number {
+  if (typeof user.heightCm === 'number') {
+    return user.heightCm;
+  }
+  return 158 + (stableHash(user.id) % 28);
+}
+
+function resolveEyeColor(user: User): string {
+  if (user.eyeColor) {
+    return user.eyeColor;
+  }
+  const eyeColors = ['Brown', 'Blue', 'Green', 'Hazel', 'Gray'];
+  return eyeColors[stableHash(user.id) % eyeColors.length];
+}
+
+function resolveInterests(user: User): string[] {
+  if (user.interests && user.interests.length > 0) {
+    return user.interests.slice(0, 5);
+  }
+
+  const start = stableHash(user.id) % defaultInterests.length;
+  return Array.from({ length: 5 }, (_, index) => defaultInterests[(start + index) % defaultInterests.length]);
+}
+
+function resolveInteractionProfiles(currentUser: User, type: InteractionType): User[] {
+  const candidates = users.filter((candidate) => candidate.id !== currentUser.id);
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const baseOffset =
+    type === 'matches'
+      ? 0
+      : type === 'likes_sent'
+        ? 2
+        : 4;
+  const hash = stableHash(currentUser.id);
+  const start = (hash + baseOffset) % candidates.length;
+  const length = Math.min(8, candidates.length);
+
+  return Array.from({ length }, (_, index) => candidates[(start + index) % candidates.length]);
+}
+
+function UserProfileModal({
+  user,
+  onClose,
+  onOpenUser,
+}: {
+  user: User;
+  onClose: () => void;
+  onOpenUser: (nextUser: User) => void;
+}) {
   const [activeTab, setActiveTab] = useState<'activity' | 'limits' | 'moderation'>('activity');
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [activeInteraction, setActiveInteraction] = useState<InteractionType | null>(null);
   const { hasPermission, role } = usePermissions();
   const canChangeLimits = hasPermission(ADMIN_PERMISSIONS.change_limits);
   const canBanUsers = hasPermission(ADMIN_PERMISSIONS.ban_users);
+  const profilePhotos = user.photos?.length === 3 ? user.photos : [user.avatar, user.avatar, user.avatar];
+  const likesSent = resolveLikesSent(user);
+  const profileHeight = resolveHeight(user);
+  const eyeColor = resolveEyeColor(user);
+  const interests = resolveInterests(user);
+  const interactionProfiles = activeInteraction ? resolveInteractionProfiles(user, activeInteraction) : [];
+  const interactionTitle =
+    activeInteraction === 'matches'
+      ? 'Matches'
+      : activeInteraction === 'likes_sent'
+        ? 'Likes Sent'
+        : 'Likes Received';
+
+  const openViewer = (index: number) => {
+    setViewerIndex(index);
+    setViewerOpen(true);
+  };
+
+  const closeViewer = () => {
+    setViewerOpen(false);
+    setViewerIndex(0);
+  };
+
+  const nextViewer = () => {
+    setViewerIndex((prev) => (prev + 1) % profilePhotos.length);
+  };
+
+  const prevViewer = () => {
+    setViewerIndex((prev) => (prev - 1 + profilePhotos.length) % profilePhotos.length);
+  };
+
+  useEffect(() => {
+    if (!viewerOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeViewer();
+      }
+      if (event.key === 'ArrowRight') {
+        nextViewer();
+      }
+      if (event.key === 'ArrowLeft') {
+        prevViewer();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewerOpen, profilePhotos.length]);
+
+  useEffect(() => {
+    setActiveTab('activity');
+    setViewerOpen(false);
+    setViewerIndex(0);
+    setActiveInteraction(null);
+  }, [user.id]);
 
   const handleEditLimits = () => {
     if (!canChangeLimits) {
@@ -60,34 +228,51 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-2xl glass-panel max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
         {/* Header */}
         <div className="p-6 border-b border-[rgba(123,97,255,0.12)]">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-4">
-              <div className="relative">
-                <img 
-                  src={user.avatar} 
+              <button
+                onClick={() => openViewer(0)}
+                className="relative rounded-2xl transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[rgba(123,97,255,0.3)]"
+                aria-label="Open profile photos"
+              >
+                <img
+                  src={user.avatar}
                   alt={user.name}
-                  className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)]"
+                  className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)] cursor-zoom-in"
                 />
-                <span className={cn(
-                  "absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-[#0E1320]",
-                  statusConfig[user.status].dot
-                )} />
-              </div>
+                <span
+                  className={cn(
+                    "absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-[#0E1320]",
+                    statusConfig[user.status].dot,
+                  )}
+                />
+              </button>
               <div>
-                <h3 className="text-xl font-bold text-[#F5F7FF]">{user.name}</h3>
-                <p className="text-sm text-[#A7B1C8]">{user.handle}</p>
+                <h3 className="text-xl font-bold text-[#F5F7FF]">
+                  {user.name}, {user.age}
+                </h3>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-[#A7B1C8]">
+                  <span>{user.handle}</span>
+                  <span className="text-[rgba(167,177,200,0.5)]">•</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5" />
+                    {user.phone}
+                  </span>
+                </div>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className={cn(
-                    "px-2 py-0.5 rounded-full text-xs font-medium",
-                    statusConfig[user.status].bg,
-                    statusConfig[user.status].text
-                  )}>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 rounded-full text-xs font-medium",
+                      statusConfig[user.status].bg,
+                      statusConfig[user.status].text,
+                    )}
+                  >
                     {user.status}
                   </span>
                   {user.isPremium && (
@@ -96,10 +281,13 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
                       {user.subscriptionTier}
                     </span>
                   )}
+                  <span className="text-xs text-[#A7B1C8]">
+                    {profileHeight} cm • {eyeColor} eyes
+                  </span>
                 </div>
               </div>
             </div>
-            <button 
+            <button
               onClick={onClose}
               className="p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)] hover:text-[#F5F7FF] transition-colors"
             >
@@ -116,9 +304,9 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
               onClick={() => setActiveTab(tab)}
               className={cn(
                 "flex-1 py-3 text-sm font-medium capitalize transition-colors relative",
-                activeTab === tab 
-                  ? "text-[#F5F7FF]" 
-                  : "text-[#A7B1C8] hover:text-[#F5F7FF]"
+                activeTab === tab
+                  ? "text-[#F5F7FF]"
+                  : "text-[#A7B1C8] hover:text-[#F5F7FF]",
               )}
             >
               {tab}
@@ -133,31 +321,40 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
         <div className="p-6 overflow-y-auto scrollbar-thin flex-1">
           {activeTab === 'activity' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button
+                  onClick={() => setActiveInteraction('matches')}
+                  className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                >
                   <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
                     <Heart className="w-4 h-4" />
                     <span className="text-sm">Matches</span>
                   </div>
                   <p className="text-2xl font-bold text-[#F5F7FF]">{user.matches}</p>
-                </div>
-                <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                </button>
+                <button
+                  onClick={() => setActiveInteraction('likes_sent')}
+                  className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                >
+                  <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
+                    <Heart className="w-4 h-4" />
+                    <span className="text-sm">Likes Sent</span>
+                  </div>
+                  <p className="text-2xl font-bold text-[#F5F7FF]">{likesSent}</p>
+                </button>
+                <button
+                  onClick={() => setActiveInteraction('likes_received')}
+                  className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                >
                   <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
                     <Star className="w-4 h-4" />
                     <span className="text-sm">Likes Received</span>
                   </div>
                   <p className="text-2xl font-bold text-[#F5F7FF]">{user.likes}</p>
-                </div>
+                </button>
               </div>
-              
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
-                  <Calendar className="w-5 h-5 text-[#A7B1C8]" />
-                  <div>
-                    <p className="text-sm text-[#A7B1C8]">Joined</p>
-                    <p className="text-sm text-[#F5F7FF]">{user.joined}</p>
-                  </div>
-                </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
                   <Clock className="w-5 h-5 text-[#A7B1C8]" />
                   <div>
@@ -166,18 +363,57 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
-                  <MapPin className="w-5 h-5 text-[#A7B1C8]" />
+                  <Calendar className="w-5 h-5 text-[#A7B1C8]" />
                   <div>
-                    <p className="text-sm text-[#A7B1C8]">Location</p>
-                    <p className="text-sm text-[#F5F7FF]">{user.location}</p>
+                    <p className="text-sm text-[#A7B1C8]">Joined</p>
+                    <p className="text-sm text-[#F5F7FF]">{formatJoinedLabel(user.joined)}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
-                  <Mail className="w-5 h-5 text-[#A7B1C8]" />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
+                <MapPin className="w-5 h-5 text-[#A7B1C8]" />
+                <div>
+                  <p className="text-sm text-[#A7B1C8]">Location</p>
+                  <p className="text-sm text-[#F5F7FF]">{user.location}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <p className="text-sm text-[#A7B1C8] mb-2">Profile</p>
+                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                   <div>
-                    <p className="text-sm text-[#A7B1C8]">Email</p>
-                    <p className="text-sm text-[#F5F7FF]">{user.email}</p>
+                    <p className="text-[#A7B1C8] text-xs">Gender</p>
+                    <p className="text-[#F5F7FF]">{user.gender}</p>
                   </div>
+                  <div>
+                    <p className="text-[#A7B1C8] text-xs">Age</p>
+                    <p className="text-[#F5F7FF]">{user.age}</p>
+                  </div>
+                  <div>
+                    <p className="text-[#A7B1C8] text-xs">Height</p>
+                    <p className="text-[#F5F7FF]">{profileHeight} cm</p>
+                  </div>
+                  <div>
+                    <p className="text-[#A7B1C8] text-xs">Eyes</p>
+                    <p className="text-[#F5F7FF]">{eyeColor}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-[#A7B1C8] mb-1">Bio</p>
+                <p className="text-sm text-[#F5F7FF]">{user.bio || 'No bio provided.'}</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <p className="text-sm text-[#A7B1C8] mb-3">Interests</p>
+                <div className="flex flex-wrap gap-2">
+                  {interests.map((interest) => (
+                    <span
+                      key={interest}
+                      className="px-2.5 py-1 rounded-full text-xs bg-[rgba(123,97,255,0.14)] border border-[rgba(123,97,255,0.25)] text-[#CFC6FF]"
+                    >
+                      {interest}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>
@@ -194,7 +430,7 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
                   <div className="h-full w-full rounded-full bg-[#7B61FF]" />
                 </div>
               </div>
-              
+
               <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm text-[#A7B1C8]">Super Likes</span>
@@ -204,7 +440,7 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
                   <div className="h-full w-full rounded-full bg-[#4CC9F0]" />
                 </div>
               </div>
-              
+
               <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm text-[#A7B1C8]">Boosts</span>
@@ -229,15 +465,20 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
                     <p className="text-xs text-[#A7B1C8]">Based on activity and reports</p>
                   </div>
                 </div>
-                <span className={cn(
-                  "text-2xl font-bold",
-                  user.trustScore >= 90 ? "text-[#2DD4A8]" :
-                  user.trustScore >= 70 ? "text-[#FFD166]" : "text-[#FF6B6B]"
-                )}>
+                <span
+                  className={cn(
+                    "text-2xl font-bold",
+                    user.trustScore >= 90
+                      ? "text-[#2DD4A8]"
+                      : user.trustScore >= 70
+                        ? "text-[#FFD166]"
+                        : "text-[#FF6B6B]",
+                  )}
+                >
                   {user.trustScore}
                 </span>
               </div>
-              
+
               <div className="p-4 rounded-xl bg-[rgba(255,107,107,0.05)] border border-[rgba(255,107,107,0.2)]">
                 <div className="flex items-center gap-2 mb-3">
                   <Flag className="w-4 h-4 text-[#FF6B6B]" />
@@ -269,8 +510,122 @@ function UserProfileModal({ user, onClose }: { user: User; onClose: () => void }
           </button>
         </div>
       </div>
+
+      {activeInteraction && (
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center p-4"
+          onClick={() => setActiveInteraction(null)}
+        >
+          <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-md glass-panel max-h-[72vh] overflow-hidden flex flex-col"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-4 border-b border-[rgba(123,97,255,0.12)] flex items-center justify-between">
+              <div>
+                <p className="text-sm text-[#A7B1C8]">{interactionTitle}</p>
+                <p className="text-xs text-[#A7B1C8]">{interactionProfiles.length} profiles</p>
+              </div>
+              <button
+                onClick={() => setActiveInteraction(null)}
+                className="p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)] hover:text-[#F5F7FF] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 space-y-2 overflow-y-auto scrollbar-thin">
+              {interactionProfiles.map((profile) => (
+                <button
+                  key={`${activeInteraction}-${profile.id}`}
+                  onClick={() => {
+                    setActiveInteraction(null);
+                    onOpenUser(profile);
+                  }}
+                  className="w-full text-left flex items-center gap-3 p-2 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                >
+                  <img
+                    src={profile.avatar}
+                    alt={profile.name}
+                    className="w-11 h-11 rounded-xl border border-[rgba(123,97,255,0.25)] object-cover"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-[#F5F7FF]">
+                      {profile.name}, {profile.age}
+                    </p>
+                    <p className="text-xs text-[#A7B1C8]">{profile.handle}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewerOpen && (
+        <div
+          className="fixed inset-0 z-[90] bg-[rgba(6,8,14,0.86)] backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeViewer}
+        >
+          <div className="relative w-full max-w-4xl" onClick={(event) => event.stopPropagation()}>
+            <button
+              onClick={closeViewer}
+              className="absolute -top-11 right-0 px-3 py-2 rounded-lg bg-[rgba(14,19,32,0.8)] border border-[rgba(123,97,255,0.2)] text-[#F5F7FF] text-sm hover:bg-[rgba(123,97,255,0.12)]"
+            >
+              Close
+            </button>
+
+            <div className="relative rounded-2xl overflow-hidden border border-[rgba(123,97,255,0.2)] bg-[rgba(14,19,32,0.6)]">
+              <img
+                src={profilePhotos[viewerIndex]}
+                alt={`${user.name} photo ${viewerIndex + 1}`}
+                className="w-full max-h-[78vh] object-contain"
+              />
+
+              {profilePhotos.length > 1 && (
+                <button
+                  onClick={prevViewer}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[rgba(14,19,32,0.75)] border border-[rgba(123,97,255,0.2)] flex items-center justify-center text-[#F5F7FF] hover:bg-[rgba(123,97,255,0.14)]"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              )}
+
+              {profilePhotos.length > 1 && (
+                <button
+                  onClick={nextViewer}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[rgba(14,19,32,0.75)] border border-[rgba(123,97,255,0.2)] flex items-center justify-center text-[#F5F7FF] hover:bg-[rgba(123,97,255,0.14)]"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-xs text-[#A7B1C8]">
+              <span>
+                {viewerIndex + 1} / {profilePhotos.length}
+              </span>
+              <div className="flex items-center gap-2">
+                {profilePhotos.map((_, index) => (
+                  <button
+                    key={`photo-dot-${index}`}
+                    onClick={() => setViewerIndex(index)}
+                    className={cn(
+                      "w-2.5 h-2.5 rounded-full border border-[rgba(123,97,255,0.35)]",
+                      index === viewerIndex
+                        ? "bg-[rgba(123,97,255,0.9)]"
+                        : "bg-[rgba(245,247,255,0.12)]",
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 
 export function UsersPage() {
@@ -571,8 +926,10 @@ export function UsersPage() {
       {/* User Profile Modal */}
       {selectedUser && (
         <UserProfileModal 
+          key={selectedUser.id}
           user={selectedUser} 
-          onClose={() => setSelectedUser(null)} 
+          onClose={() => setSelectedUser(null)}
+          onOpenUser={setSelectedUser}
         />
       )}
     </div>

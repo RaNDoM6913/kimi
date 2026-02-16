@@ -10,6 +10,7 @@ export interface User {
   id: string;
   name: string;
   handle: string;
+  phone: string;
   avatar: string;
   email: string;
   joined: string;
@@ -23,6 +24,10 @@ export interface User {
   subscriptionTier?: string;
   bio?: string;
   photos?: string[];
+  likesSent?: number;
+  heightCm?: number;
+  eyeColor?: string;
+  interests?: string[];
   matches: number;
   likes: number;
   reports?: number;
