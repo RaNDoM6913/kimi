@@ -48,3 +48,14 @@ type AdminBotModerationRejectRequest struct {
 	ReasonText      string `json:"reason_text"`
 	RequiredFixStep string `json:"required_fix_step"`
 }
+
+type AdminBotModerationRejectReasonItem struct {
+	ReasonCode      string `json:"reason_code"`
+	Label           string `json:"label"`
+	ReasonText      string `json:"reason_text"`
+	RequiredFixStep string `json:"required_fix_step"`
+}
+
+type AdminBotModerationRejectReasonsResponse struct {
+	Items []AdminBotModerationRejectReasonItem `json:"items"`
+}

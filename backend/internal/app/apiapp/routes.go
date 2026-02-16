@@ -95,6 +95,7 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	r.Get("/healthz", healthHandler.Get)
 	r.Route("/admin/bot", func(r chi.Router) {
 		r.Use(adminBotAuthMW)
+		r.Get("/mod/reject-reasons", adminBotModerationHandler.RejectReasons)
 		r.Post("/mod/queue/acquire", adminBotModerationHandler.QueueAcquire)
 		r.Post("/mod/items/{id}/approve", adminBotModerationHandler.Approve)
 		r.Post("/mod/items/{id}/reject", adminBotModerationHandler.Reject)

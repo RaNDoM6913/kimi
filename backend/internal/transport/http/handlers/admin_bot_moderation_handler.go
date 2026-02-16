@@ -86,6 +86,32 @@ func (h *AdminBotModerationHandler) QueueAcquire(w http.ResponseWriter, r *http.
 	})
 }
 
+func (h *AdminBotModerationHandler) RejectReasons(w http.ResponseWriter, r *http.Request) {
+	if _, ok := adminBotActorTGID(r); !ok {
+		writeUnauthorized(w, "UNAUTHORIZED", "admin bot authentication required")
+		return
+	}
+	if h.service == nil {
+		writeInternal(w, "MODERATION_SERVICE_UNAVAILABLE", "moderation service is unavailable")
+		return
+	}
+
+	serviceItems := h.service.ListRejectReasons()
+	resp := dto.AdminBotModerationRejectReasonsResponse{
+		Items: make([]dto.AdminBotModerationRejectReasonItem, 0, len(serviceItems)),
+	}
+	for _, item := range serviceItems {
+		resp.Items = append(resp.Items, dto.AdminBotModerationRejectReasonItem{
+			ReasonCode:      item.ReasonCode,
+			Label:           item.Label,
+			ReasonText:      item.ReasonText,
+			RequiredFixStep: item.RequiredFixStep,
+		})
+	}
+
+	httperrors.Write(w, http.StatusOK, resp)
+}
+
 func (h *AdminBotModerationHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	actorTGID, ok := adminBotActorTGID(r)
 	if !ok {
