@@ -3,13 +3,12 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { OverviewPage } from '@/pages/OverviewPage';
 import { UsersPage } from '@/pages/UsersPage';
-import { EngagementPage } from '@/pages/EngagementPage';
-import { MonetizationPage } from '@/pages/MonetizationPage';
-import { AdsPage } from '@/pages/AdsPage';
-import { ModerationPage } from '@/pages/ModerationPage';
-import { ExperimentsPage } from '@/pages/ExperimentsPage';
+import { EngagementPage, EngagementExportButton } from '@/pages/EngagementPage';
+import { MonetizationPage, MonetizationExportButton } from '@/pages/MonetizationPage';
+import { AdsPage, AdsNewCampaignButton } from '@/pages/AdsPage';
+import { ModerationPage, ModerationPendingBadge, useModerationPendingCount } from '@/pages/ModerationPage';
 import { SystemPage } from '@/pages/SystemPage';
-import { RolesPage } from '@/pages/RolesPage';
+import { RolesPage, RolesCreateRoleButton } from '@/pages/RolesPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ADMIN_PERMISSIONS, type AdminPermission } from '@/admin/permissions';
 import { DEFAULT_ADMIN_ROLE, isAdminRole, type AdminRole } from '@/admin/roles';
@@ -24,7 +23,6 @@ const pageTitles: Record<string, string> = {
   engagement: 'Engagement',
   monetization: 'Monetization',
   ads: 'Ads',
-  experiments: 'Experiments',
   system: 'System',
   roles: 'Roles & Access',
   settings: 'Settings',
@@ -37,7 +35,6 @@ const pagePermissions: Record<string, AdminPermission> = {
   engagement: ADMIN_PERMISSIONS.view_metrics,
   monetization: ADMIN_PERMISSIONS.view_payments,
   ads: ADMIN_PERMISSIONS.view_ads_metrics,
-  experiments: ADMIN_PERMISSIONS.manage_experiments,
   system: ADMIN_PERMISSIONS.view_metrics,
   roles: ADMIN_PERMISSIONS.manage_roles,
   settings: ADMIN_PERMISSIONS.change_limits,
@@ -59,6 +56,7 @@ function resolveInitialRole(): AdminRole {
 function AppShell() {
   const [activePage, setActivePage] = useState('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const moderationPendingCount = useModerationPendingCount();
 
   const renderProtectedPage = (permission: AdminPermission, page: ReactElement) => (
     <ProtectedRoute permission={permission}>{page}</ProtectedRoute>
@@ -78,8 +76,6 @@ function AppShell() {
         return renderProtectedPage(pagePermissions.monetization, <MonetizationPage />);
       case 'ads':
         return renderProtectedPage(pagePermissions.ads, <AdsPage />);
-      case 'experiments':
-        return renderProtectedPage(pagePermissions.experiments, <ExperimentsPage />);
       case 'system':
         return renderProtectedPage(pagePermissions.system, <SystemPage />);
       case 'roles':
@@ -102,17 +98,28 @@ function AppShell() {
         onPageChange={setActivePage}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
+        moderationPendingCount={moderationPendingCount}
       />
 
-      {/* Main Content — margin matches sidebar width (w-20 = 80px, w-64 = 256px) */}
+      {/* Main Content — margin matches sidebar width (w-20 = 80px, w-60 = 240px) */}
       <div
         className={cn(
           'flex-1 flex flex-col transition-[margin] duration-300',
-          sidebarCollapsed ? 'ml-20' : 'ml-64',
+          sidebarCollapsed ? 'ml-20' : 'ml-60',
         )}
       >
         {/* Top Bar */}
-        <TopBar pageTitle={pageTitles[activePage] ?? 'Dashboard'} />
+        <TopBar
+          pageTitle={pageTitles[activePage] ?? 'Dashboard'}
+          leftSlot={
+            activePage === 'moderation' ? <ModerationPendingBadge /> :
+            activePage === 'engagement' ? <EngagementExportButton /> :
+            activePage === 'monetization' ? <MonetizationExportButton /> :
+            activePage === 'ads' ? <AdsNewCampaignButton /> :
+            activePage === 'roles' ? <RolesCreateRoleButton /> :
+            undefined
+          }
+        />
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto scrollbar-thin">{renderPage()}</main>

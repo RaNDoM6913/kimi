@@ -215,18 +215,6 @@ export function SystemPage() {
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">System</h2>
-          <p className="text-sm text-[#A7B1C8]">Infrastructure and performance metrics</p>
-        </div>
-        <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(45,212,168,0.1)] border border-[rgba(45,212,168,0.2)]">
-          <div className="w-2 h-2 bg-[#2DD4A8] rounded-full animate-pulse" />
-          <span className="text-sm text-[#2DD4A8]">All Systems Operational</span>
-        </div>
-      </div>
-
       {/* Status Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[

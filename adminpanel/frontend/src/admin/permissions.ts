@@ -17,7 +17,6 @@ export const ADMIN_PERMISSIONS = {
   view_ads_metrics: 'view_ads_metrics',
   export_ads_metrics: 'export_ads_metrics',
   manage_flags: 'manage_flags',
-  manage_experiments: 'manage_experiments',
   change_limits: 'change_limits',
   run_recalculation: 'run_recalculation',
   manage_roles: 'manage_roles',
@@ -50,7 +49,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
     ADMIN_PERMISSIONS.view_ads_metrics,
     ADMIN_PERMISSIONS.export_ads_metrics,
     ADMIN_PERMISSIONS.manage_flags,
-    ADMIN_PERMISSIONS.manage_experiments,
     ADMIN_PERMISSIONS.change_limits,
     ADMIN_PERMISSIONS.run_recalculation,
     ADMIN_PERMISSIONS.manage_roles,
@@ -83,7 +81,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
     ADMIN_PERMISSIONS.export_metrics,
     ADMIN_PERMISSIONS.view_ads_metrics,
     ADMIN_PERMISSIONS.export_ads_metrics,
-    ADMIN_PERMISSIONS.manage_experiments,
   ],
 };
 

@@ -76,36 +76,31 @@ function RetentionCohortTable() {
   );
 }
 
-export function EngagementPage() {
+/** Export button for TopBar when on Engagement page */
+export function EngagementExportButton() {
   const { hasPermission, role } = usePermissions();
   const canExportMetrics = hasPermission(ADMIN_PERMISSIONS.export_metrics);
 
-  const handleExportReport = () => {
-    if (!canExportMetrics) {
-      return;
-    }
-
+  const handleExport = () => {
+    if (!canExportMetrics) return;
     logAdminAction('export_engagement_metrics', { id: 'current-admin', role }, '127.0.0.1', getClientDevice());
   };
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">Engagement</h2>
-          <p className="text-sm text-[#A7B1C8]">User behavior and retention analytics</p>
-        </div>
-        <button
-          onClick={handleExportReport}
-          disabled={!canExportMetrics}
-          className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Export Report
-          <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
+    <button
+      onClick={handleExport}
+      disabled={!canExportMetrics}
+      className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      Export
+      <ArrowRight className="w-4 h-4" />
+    </button>
+  );
+}
 
+export function EngagementPage() {
+  return (
+    <div className="p-6 space-y-6 animate-fade-in">
       {/* Key Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[

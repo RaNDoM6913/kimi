@@ -6,23 +6,22 @@ import {
   adCampaigns 
 } from '@/data/mockData';
 import { KPICard } from '@/components/ui/KPICard';
-import { TrendingUp, Eye, MousePointer, Target, ArrowRight, Play, Pause, MoreHorizontal } from 'lucide-react';
+import { TrendingUp, Eye, MousePointer, Target, ArrowRight, Play, Pause, MoreHorizontal, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+/** "+ New Campaign" button for TopBar when on Ads page */
+export function AdsNewCampaignButton() {
+  return (
+    <button type="button" className="btn-primary flex items-center gap-2">
+      <Plus className="w-4 h-4" />
+      New Campaign
+    </button>
+  );
+}
 
 export function AdsPage() {
   return (
     <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">Ads</h2>
-          <p className="text-sm text-[#A7B1C8]">Advertising performance and campaign management</p>
-        </div>
-        <button className="btn-primary flex items-center gap-2">
-          + New Campaign
-        </button>
-      </div>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {adsKPIs.map((kpi, index) => (

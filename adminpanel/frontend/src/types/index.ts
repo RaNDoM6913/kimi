@@ -54,25 +54,6 @@ export interface RetentionCohort {
   day30: number;
 }
 
-export interface Experiment {
-  id: string;
-  name: string;
-  status: 'running' | 'paused' | 'completed';
-  startDate: string;
-  endDate?: string;
-  variants: ExperimentVariant[];
-  metric: string;
-  winner?: string;
-}
-
-export interface ExperimentVariant {
-  id: string;
-  name: string;
-  allocation: number;
-  conversions: number;
-  conversionRate: number;
-}
-
 export interface Role {
   id: string;
   name: string;

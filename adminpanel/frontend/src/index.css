@@ -245,6 +245,11 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(123, 97, 255, 0.3) transparent;
   }
+
+  /* Reserve space for scrollbar so layout doesn't shift when it appears (e.g. sidebar expand) */
+  .scrollbar-gutter-stable {
+    scrollbar-gutter: stable;
+  }
   
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;

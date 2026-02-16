@@ -4,7 +4,6 @@ import type {
   Alert, 
   ChartDataPoint, 
   RetentionCohort, 
-  Experiment, 
   Role, 
   Permission,
   ModerationItem,
@@ -244,57 +243,6 @@ export const adCampaigns: AdCampaign[] = [
   { id: 'CAMP-004', name: 'Weekend Boost', status: 'ended', impressions: 845000, clicks: 20100, ctr: 2.38, conversions: 1842, revenue: 28400, spend: 9500, roas: 2.99 },
 ];
 
-// Experiments data
-export const experiments: Experiment[] = [
-  {
-    id: 'EXP-001',
-    name: 'Onboarding Step 3 Copy',
-    status: 'running',
-    startDate: '2024-02-01',
-    metric: 'Completion Rate',
-    variants: [
-      { id: 'control', name: 'Control', allocation: 50, conversions: 1240, conversionRate: 62 },
-      { id: 'variant_a', name: 'Shorter Copy', allocation: 50, conversions: 1380, conversionRate: 69 },
-    ],
-  },
-  {
-    id: 'EXP-002',
-    name: 'Like Button Animation',
-    status: 'running',
-    startDate: '2024-02-10',
-    metric: 'Like Rate',
-    variants: [
-      { id: 'control', name: 'Control', allocation: 50, conversions: 8500, conversionRate: 24 },
-      { id: 'variant_a', name: 'Heart Burst', allocation: 50, conversions: 9200, conversionRate: 26 },
-    ],
-  },
-  {
-    id: 'EXP-003',
-    name: 'Paywall Timing',
-    status: 'completed',
-    startDate: '2024-01-15',
-    endDate: '2024-02-05',
-    metric: 'Conversion Rate',
-    winner: 'variant_b',
-    variants: [
-      { id: 'control', name: 'Day 3', allocation: 33, conversions: 420, conversionRate: 4.2 },
-      { id: 'variant_a', name: 'Day 5', allocation: 33, conversions: 380, conversionRate: 3.8 },
-      { id: 'variant_b', name: 'Day 7', allocation: 34, conversions: 510, conversionRate: 5.1 },
-    ],
-  },
-  {
-    id: 'EXP-004',
-    name: 'Profile Photo Prompt',
-    status: 'paused',
-    startDate: '2024-02-08',
-    metric: 'Photo Upload Rate',
-    variants: [
-      { id: 'control', name: 'Control', allocation: 50, conversions: 2100, conversionRate: 42 },
-      { id: 'variant_a', name: 'With Examples', allocation: 50, conversions: 2080, conversionRate: 41.6 },
-    ],
-  },
-];
-
 // System metrics
 export const systemMetrics: SystemMetric[] = [
   { name: 'API Latency (p99)', value: '142', unit: 'ms', trend: -5.2, data: [
@@ -343,7 +291,6 @@ export const permissions: Permission[] = [
   { id: 'perm_moderation_remove', name: 'Remove Content', description: 'Remove reported content', category: 'Moderation' },
   { id: 'perm_revenue_view', name: 'View Revenue', description: 'Access revenue dashboards', category: 'Finance' },
   { id: 'perm_pricing_edit', name: 'Edit Pricing', description: 'Modify subscription pricing', category: 'Finance' },
-  { id: 'perm_experiments_manage', name: 'Manage Experiments', description: 'Create and manage A/B tests', category: 'Product' },
   { id: 'perm_roles_manage', name: 'Manage Roles', description: 'Create and assign roles', category: 'Admin' },
   { id: 'perm_system_view', name: 'View System', description: 'Access system metrics', category: 'System' },
   { id: 'perm_settings_edit', name: 'Edit Settings', description: 'Modify app settings', category: 'Admin' },

@@ -50,6 +50,27 @@ function PermissionToggle({
   );
 }
 
+/** "Create Role" button for TopBar when on Roles page */
+export function RolesCreateRoleButton() {
+  const { hasPermission, role } = usePermissions();
+  const canManageRoles = hasPermission(ADMIN_PERMISSIONS.manage_roles);
+
+  const logRoleAction = (action: string) => {
+    logAdminAction(action, { id: 'current-admin', role }, '127.0.0.1', getClientDevice());
+  };
+
+  return (
+    <button
+      onClick={() => canManageRoles && logRoleAction('create_role')}
+      disabled={!canManageRoles}
+      className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <Plus className="w-4 h-4" />
+      Create Role
+    </button>
+  );
+}
+
 export function RolesPage() {
   const [selectedRole, setSelectedRole] = useState<Role>(roles[0]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,22 +113,6 @@ export function RolesPage() {
 
   return (
     <div className="p-6 h-[calc(100vh-64px)] animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">Roles & Access</h2>
-          <p className="text-sm text-[#A7B1C8]">Manage user roles and permissions</p>
-        </div>
-        <button
-          onClick={() => canManageRoles && logRoleAction('create_role')}
-          disabled={!canManageRoles}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Plus className="w-4 h-4" />
-          Create Role
-        </button>
-      </div>
-
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {[

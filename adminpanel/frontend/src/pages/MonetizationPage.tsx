@@ -12,15 +12,13 @@ import { ADMIN_PERMISSIONS } from '@/admin/permissions';
 import { usePermissions } from '@/admin/usePermissions';
 import { getClientDevice, logAdminAction } from '@/admin/audit';
 
-export function MonetizationPage() {
+/** "Export Report" button for TopBar when on Monetization page */
+export function MonetizationExportButton() {
   const { hasPermission, role } = usePermissions();
   const canExportMetrics = hasPermission(ADMIN_PERMISSIONS.export_metrics);
 
   const handleExportReport = () => {
-    if (!canExportMetrics) {
-      return;
-    }
-
+    if (!canExportMetrics) return;
     logAdminAction(
       'export_monetization_metrics',
       { id: 'current-admin', role },
@@ -30,23 +28,20 @@ export function MonetizationPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-[#F5F7FF]">Monetization</h2>
-          <p className="text-sm text-[#A7B1C8]">Revenue, subscriptions, and purchase analytics</p>
-        </div>
-        <button
-          onClick={handleExportReport}
-          disabled={!canExportMetrics}
-          className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Export Report
-          <ArrowRight className="w-4 h-4" />
-        </button>
-      </div>
+    <button
+      onClick={handleExportReport}
+      disabled={!canExportMetrics}
+      className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      Export
+      <ArrowRight className="w-4 h-4" />
+    </button>
+  );
+}
 
+export function MonetizationPage() {
+  return (
+    <div className="p-6 space-y-6 animate-fade-in">
       {/* Key Revenue Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
