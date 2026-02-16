@@ -10,6 +10,7 @@ import { ModerationPage, ModerationPendingBadge, useModerationPendingCount } fro
 import { SystemPage } from '@/pages/SystemPage';
 import { RolesPage, RolesCreateRoleButton } from '@/pages/RolesPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { LoginPage } from '@/pages/LoginPage';
 import { ADMIN_PERMISSIONS, type AdminPermission } from '@/admin/permissions';
 import { DEFAULT_ADMIN_ROLE, isAdminRole, type AdminRole } from '@/admin/roles';
 import { PermissionsProvider } from '@/admin/usePermissions';
@@ -130,6 +131,15 @@ function AppShell() {
 
 function App() {
   const [currentRole] = useState<AdminRole>(resolveInitialRole);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   return (
     <PermissionsProvider role={currentRole}>

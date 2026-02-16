@@ -306,14 +306,6 @@ export function UsersPage() {
     }
   };
 
-  const handleAddUser = () => {
-    if (!canEditUsers) {
-      return;
-    }
-
-    logAdminAction('add_user', { id: 'current-admin', role }, '127.0.0.1', getClientDevice());
-  };
-
   const handleBulkBan = () => {
     if (!canBanUsers || selectedRows.size === 0) {
       return;

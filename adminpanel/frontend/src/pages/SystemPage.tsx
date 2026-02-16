@@ -38,6 +38,7 @@ function MetricCard({
   const isGoodTrend = metric.name.includes('Error') || metric.name.includes('Latency') || metric.name.includes('Blocks')
     ? metric.trend < 0 
     : metric.trend > 0;
+  const gradientId = `gradient-${metric.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
   return (
     <div 
@@ -73,7 +74,7 @@ function MetricCard({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={metric.data}>
             <defs>
-              <linearGradient id={`gradient-${metric.name}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={color} stopOpacity={0} />
               </linearGradient>
@@ -83,7 +84,7 @@ function MetricCard({
               dataKey="value" 
               stroke={color}
               strokeWidth={2}
-              fill={`url(#gradient-${metric.name})`}
+              fill={`url(#${gradientId})`}
             />
           </AreaChart>
         </ResponsiveContainer>

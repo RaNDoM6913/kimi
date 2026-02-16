@@ -264,7 +264,7 @@ const unifiedCases: ModerationCase[] = [
     tags: ['Underage suspicion'],
     history: [
       { id: 'ob_004_h1', text: 'Photo age-check score low', timestampLabel: '55m ago' },
-      { id: 'ob_004_h2', text: 'Escalated to senior moderation', timestampLabel: '50m ago' },
+      { id: 'ob_004_h2', text: 'Sent to senior moderation', timestampLabel: '50m ago' },
       { id: 'ob_004_h3', text: 'Waiting for final decision', timestampLabel: '48m ago' },
     ],
   },
@@ -438,7 +438,7 @@ const unifiedCases: ModerationCase[] = [
     history: [
       { id: 'rp_003_h1', text: 'Report received from chat screen', timestampLabel: '30m ago' },
       { id: 'rp_003_h2', text: 'Toxicity score above threshold', timestampLabel: '28m ago' },
-      { id: 'rp_003_h3', text: 'Escalated to senior moderator', timestampLabel: '26m ago' },
+      { id: 'rp_003_h3', text: 'Sent to senior moderator', timestampLabel: '26m ago' },
     ],
   },
   {
@@ -659,7 +659,7 @@ const unifiedCases: ModerationCase[] = [
     messages: [
       { id: 'sp_004_m1', from: 'user', text: 'Someone I blocked keeps creating new profiles.', timestampLabel: '06:44' },
       { id: 'sp_004_m2', from: 'system', text: 'Ticket imported from Telegram support bot.', timestampLabel: '06:44' },
-      { id: 'sp_004_m3', from: 'admin', text: 'We can escalate this to the trust and safety team now.', timestampLabel: '06:49' },
+      { id: 'sp_004_m3', from: 'admin', text: 'We can send this to the trust and safety team now.', timestampLabel: '06:49' },
       { id: 'sp_004_m4', from: 'user', text: 'Please do, I feel unsafe.', timestampLabel: '06:50' },
       { id: 'sp_004_m5', from: 'system', text: 'Emergency policy checklist attached.', timestampLabel: '06:52' },
       { id: 'sp_004_m6', from: 'admin', text: 'Escalation submitted, we will update you shortly.', timestampLabel: '06:55' },
@@ -667,7 +667,7 @@ const unifiedCases: ModerationCase[] = [
     tags: ['Underage suspicion'],
     history: [
       { id: 'sp_004_h1', text: 'Safety ticket created', timestampLabel: '47m ago' },
-      { id: 'sp_004_h2', text: 'Escalated to trust and safety', timestampLabel: '45m ago' },
+      { id: 'sp_004_h2', text: 'Sent to trust and safety', timestampLabel: '45m ago' },
       { id: 'sp_004_h3', text: 'Temporary shadow block applied', timestampLabel: '43m ago' },
       { id: 'sp_004_h4', text: 'Awaiting final review', timestampLabel: '39m ago' },
     ],
@@ -887,8 +887,7 @@ type ModerationAction =
   | 'warn'
   | 'ban'
   | 'resolve'
-  | 'request_info'
-  | 'escalate';
+  | 'request_info';
 
 const actionPermissions = {
   approve: ADMIN_PERMISSIONS.approve_profiles,
@@ -897,7 +896,6 @@ const actionPermissions = {
   dismiss: ADMIN_PERMISSIONS.reject_profiles,
   remove_content: ADMIN_PERMISSIONS.reject_profiles,
   warn: ADMIN_PERMISSIONS.moderate_profiles,
-  escalate: ADMIN_PERMISSIONS.moderate_profiles,
   ban: ADMIN_PERMISSIONS.ban_users,
   resolve: ADMIN_PERMISSIONS.moderate_profiles,
   request_info: ADMIN_PERMISSIONS.moderate_profiles,
@@ -913,13 +911,12 @@ const actionMeta: Record<ModerationAction, { label: string; icon: ReactNode; ton
   ban: { label: 'Ban', icon: <Ban className="w-4 h-4" />, tone: 'danger' },
   resolve: { label: 'Resolve', icon: <Check className="w-4 h-4" />, tone: 'primary' },
   request_info: { label: 'Request info', icon: <MessageSquare className="w-4 h-4" />, tone: 'neutral' },
-  escalate: { label: 'Escalate', icon: <AlertTriangle className="w-4 h-4" />, tone: 'warn' },
 };
 
 const actionsByType: Record<ModerationCaseType, ModerationAction[]> = {
-  onboarding: ['approve', 'reject', 'request_changes', 'escalate'],
-  report: ['dismiss', 'remove_content', 'warn', 'ban', 'escalate'],
-  support: ['resolve', 'request_info', 'escalate'],
+  onboarding: ['approve', 'reject', 'request_changes'],
+  report: ['dismiss', 'remove_content', 'warn', 'ban'],
+  support: ['resolve', 'request_info'],
 };
 
 function FiltersBar({
