@@ -1,6 +1,7 @@
 package apiapp
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ivankudzin/tgapp/backend/internal/config"
+	adminauthsvc "github.com/ivankudzin/tgapp/backend/internal/services/adminauth"
 	authsvc "github.com/ivankudzin/tgapp/backend/internal/services/auth"
 	httperrors "github.com/ivankudzin/tgapp/backend/internal/transport/http/errors"
 )
@@ -48,6 +50,62 @@ func AuthMiddleware(authService *authsvc.Service, log *zap.Logger) func(http.Han
 			if err != nil {
 				if log != nil {
 					log.Debug("auth middleware validation failed", zap.Error(err))
+				}
+				httperrors.Write(w, http.StatusUnauthorized, httperrors.APIError{
+					Code:    "UNAUTHORIZED",
+					Message: "invalid access token",
+				})
+				return
+			}
+
+			ctx := authsvc.WithIdentity(r.Context(), authsvc.Identity{
+				UserID: claims.UserID,
+				SID:    claims.SID,
+				Role:   claims.Role,
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func AdminWebAuthMiddleware(adminAuthService *adminauthsvc.Service, log *zap.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if adminAuthService == nil || !adminAuthService.IsConfigured() {
+				httperrors.Write(w, http.StatusInternalServerError, httperrors.APIError{
+					Code:    "ADMIN_AUTH_UNAVAILABLE",
+					Message: "admin web auth is unavailable",
+				})
+				return
+			}
+
+			accessToken, ok := extractBearerToken(r.Header.Get("Authorization"))
+			if !ok {
+				httperrors.Write(w, http.StatusUnauthorized, httperrors.APIError{
+					Code:    "UNAUTHORIZED",
+					Message: "missing bearer token",
+				})
+				return
+			}
+
+			claims, err := adminAuthService.ValidateAccessToken(r.Context(), accessToken)
+			if err != nil {
+				if log != nil {
+					log.Debug("admin web auth middleware validation failed", zap.Error(err))
+				}
+				if errors.Is(err, adminauthsvc.ErrSessionExpired) {
+					httperrors.Write(w, http.StatusUnauthorized, httperrors.APIError{
+						Code:    "SESSION_EXPIRED",
+						Message: "session expired",
+					})
+					return
+				}
+				if errors.Is(err, adminauthsvc.ErrUnavailable) {
+					httperrors.Write(w, http.StatusInternalServerError, httperrors.APIError{
+						Code:    "ADMIN_AUTH_UNAVAILABLE",
+						Message: "admin web auth is unavailable",
+					})
+					return
 				}
 				httperrors.Write(w, http.StatusUnauthorized, httperrors.APIError{
 					Code:    "UNAUTHORIZED",

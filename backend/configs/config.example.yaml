@@ -37,6 +37,8 @@ bot:
 admin:
   bot_token: ""
   bot_role: MODERATOR
+  web_jwt_secret: ""
+  web_session_idle_timeout: 30m
 
 geo:
   exact_retention_hours: 48

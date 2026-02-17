@@ -67,8 +67,10 @@ type BotConfig struct {
 }
 
 type AdminConfig struct {
-	BotToken string `yaml:"bot_token"`
-	BotRole  string `yaml:"bot_role"`
+	BotToken              string        `yaml:"bot_token"`
+	BotRole               string        `yaml:"bot_role"`
+	WebJWTSecret          string        `yaml:"web_jwt_secret"`
+	WebSessionIdleTimeout time.Duration `yaml:"web_session_idle_timeout"`
 }
 
 type GeoConfig struct {
@@ -185,8 +187,10 @@ func Default() Config {
 			CircleRetention: 365 * 24 * time.Hour,
 		},
 		Admin: AdminConfig{
-			BotToken: "",
-			BotRole:  "MODERATOR",
+			BotToken:              "",
+			BotRole:               "MODERATOR",
+			WebJWTSecret:          "",
+			WebSessionIdleTimeout: 30 * time.Minute,
 		},
 		Geo: GeoConfig{
 			ExactRetentionHours: 48,
@@ -365,6 +369,12 @@ func applyEnvOverrides(cfg *Config) error {
 	if v := os.Getenv("ADMIN_BOT_ROLE"); v != "" {
 		cfg.Admin.BotRole = v
 	}
+	if v := os.Getenv("ADMIN_WEB_JWT_SECRET"); v != "" {
+		cfg.Admin.WebJWTSecret = v
+	}
+	if err := overrideDuration("ADMIN_WEB_SESSION_IDLE_TIMEOUT", &cfg.Admin.WebSessionIdleTimeout); err != nil {
+		return err
+	}
 	if err := overrideInt("GEO_EXACT_RETENTION_HOURS", &cfg.Geo.ExactRetentionHours); err != nil {
 		return err
 	}
@@ -378,6 +388,9 @@ func validate(cfg *Config) error {
 	}
 	if strings.TrimSpace(cfg.Admin.BotRole) == "" {
 		cfg.Admin.BotRole = "MODERATOR"
+	}
+	if cfg.Admin.WebSessionIdleTimeout <= 0 {
+		cfg.Admin.WebSessionIdleTimeout = 30 * time.Minute
 	}
 	if cfg.Geo.ExactRetentionHours <= 0 {
 		cfg.Geo.ExactRetentionHours = 48

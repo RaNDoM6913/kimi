@@ -9,6 +9,7 @@ import (
 	"github.com/ivankudzin/tgapp/backend/internal/config"
 	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
 	redrepo "github.com/ivankudzin/tgapp/backend/internal/repo/redis"
+	adminauthsvc "github.com/ivankudzin/tgapp/backend/internal/services/adminauth"
 	adssvc "github.com/ivankudzin/tgapp/backend/internal/services/ads"
 	analyticsvc "github.com/ivankudzin/tgapp/backend/internal/services/analytics"
 	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
@@ -22,6 +23,7 @@ import (
 	modsvc "github.com/ivankudzin/tgapp/backend/internal/services/moderation"
 	paymentsvc "github.com/ivankudzin/tgapp/backend/internal/services/payments"
 	profilesvc "github.com/ivankudzin/tgapp/backend/internal/services/profiles"
+	supportsvc "github.com/ivankudzin/tgapp/backend/internal/services/support"
 	swipesvc "github.com/ivankudzin/tgapp/backend/internal/services/swipes"
 	userssvc "github.com/ivankudzin/tgapp/backend/internal/services/users"
 	httperrors "github.com/ivankudzin/tgapp/backend/internal/transport/http/errors"
@@ -35,6 +37,7 @@ type Dependencies struct {
 	AnalyticsService   *analyticsvc.Service
 	EntitlementService *entsvc.Service
 	AuthService        *authsvc.Service
+	AdminWebAuth       *adminauthsvc.Service
 	DailyMetricsRepo   *pgrepo.DailyMetricsRepo
 	FeedService        *feedsvc.Service
 	GeoService         *geosvc.Service
@@ -44,6 +47,7 @@ type Dependencies struct {
 	ModerationService  *modsvc.Service
 	PaymentService     *paymentsvc.Service
 	ProfileService     *profilesvc.Service
+	SupportService     *supportsvc.Service
 	SwipeService       *swipesvc.Service
 	UserService        *userssvc.Service
 	Logger             *zap.Logger
@@ -79,7 +83,9 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 	adminHandler.AttachAntiAbuseDashboard(deps.AntiAbuseDashboard)
 	adminBotModerationHandler := handlers.NewAdminBotModerationHandler(deps.ModerationService, deps.AnalyticsService)
 	adminBotUsersHandler := handlers.NewAdminBotUsersHandler(deps.UserService, deps.AnalyticsService)
+	adminBotSupportHandler := handlers.NewAdminBotSupportHandler(deps.SupportService, deps.AnalyticsService)
 	authMW := AuthMiddleware(deps.AuthService, deps.Logger)
+	adminWebAuthMW := AdminWebAuthMiddleware(deps.AdminWebAuth, deps.Logger)
 	adminHealthRoleMW := RequireRole("OWNER", "SUPPORT", "MODERATOR")
 	adminPrivateRoleMW := RequireRole("OWNER", "SUPPORT")
 	adminMetricsRoleMW := RequireRole("OWNER", "SUPPORT")
@@ -103,15 +109,26 @@ func RegisterRoutes(r chi.Router, deps Dependencies) {
 		r.Post("/users/{id}/ban", adminBotUsersHandler.BanUser)
 		r.Post("/users/{id}/unban", adminBotUsersHandler.UnbanUser)
 		r.Post("/users/{id}/force-review", adminBotUsersHandler.ForceReview)
+		r.Route("/support", func(r chi.Router) {
+			r.Post("/incoming", adminBotSupportHandler.Incoming)
+			r.Get("/conversations", adminBotSupportHandler.ListConversations)
+			r.Get("/conversations/{id}/messages", adminBotSupportHandler.ListMessages)
+			r.Post("/conversations/{id}/messages", adminBotSupportHandler.SendMessage)
+			r.Post("/conversations/{id}/read", adminBotSupportHandler.MarkRead)
+			r.Post("/conversations/{id}/status", adminBotSupportHandler.SetStatus)
+			r.Post("/outbox/acquire", adminBotSupportHandler.OutboxAcquire)
+			r.Post("/outbox/{id}/sent", adminBotSupportHandler.OutboxSent)
+			r.Post("/outbox/{id}/failed", adminBotSupportHandler.OutboxFailed)
+		})
 		r.Handle("/", adminBotNotImplemented)
 		r.Handle("/*", adminBotNotImplemented)
 	})
 	r.Route("/admin", func(r chi.Router) {
-		r.With(authMW, adminHealthRoleMW).Get("/health", adminHandler.Health)
-		r.With(authMW, adminPrivateRoleMW).Get("/users/{id}/private", adminHandler.UserPrivate)
-		r.With(authMW, adminMetricsRoleMW).Get("/metrics/daily", adminHandler.MetricsDaily)
-		r.With(authMW, adminMetricsRoleMW).Get("/antiabuse/summary", adminHandler.AntiAbuseSummary)
-		r.With(authMW, adminMetricsRoleMW).Get("/antiabuse/top", adminHandler.AntiAbuseTop)
+		r.With(adminWebAuthMW, adminHealthRoleMW).Get("/health", adminHandler.Health)
+		r.With(adminWebAuthMW, adminPrivateRoleMW).Get("/users/{id}/private", adminHandler.UserPrivate)
+		r.With(adminWebAuthMW, adminMetricsRoleMW).Get("/metrics/daily", adminHandler.MetricsDaily)
+		r.With(adminWebAuthMW, adminMetricsRoleMW).Get("/antiabuse/summary", adminHandler.AntiAbuseSummary)
+		r.With(adminWebAuthMW, adminMetricsRoleMW).Get("/antiabuse/top", adminHandler.AntiAbuseTop)
 	})
 	r.Get("/config", configHandler.Handle)
 	r.With(authMW).Post("/profile/location", locationHandler.Handle)

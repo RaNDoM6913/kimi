@@ -16,6 +16,7 @@ import (
 	s3infra "github.com/ivankudzin/tgapp/backend/internal/infra/s3"
 	pgrepo "github.com/ivankudzin/tgapp/backend/internal/repo/postgres"
 	redrepo "github.com/ivankudzin/tgapp/backend/internal/repo/redis"
+	adminauthsvc "github.com/ivankudzin/tgapp/backend/internal/services/adminauth"
 	adssvc "github.com/ivankudzin/tgapp/backend/internal/services/ads"
 	analyticsvc "github.com/ivankudzin/tgapp/backend/internal/services/analytics"
 	antiabusesvc "github.com/ivankudzin/tgapp/backend/internal/services/antiabuse"
@@ -30,6 +31,7 @@ import (
 	paymentsvc "github.com/ivankudzin/tgapp/backend/internal/services/payments"
 	profilesvc "github.com/ivankudzin/tgapp/backend/internal/services/profiles"
 	ratesvc "github.com/ivankudzin/tgapp/backend/internal/services/rate"
+	supportsvc "github.com/ivankudzin/tgapp/backend/internal/services/support"
 	swipesvc "github.com/ivankudzin/tgapp/backend/internal/services/swipes"
 	userssvc "github.com/ivankudzin/tgapp/backend/internal/services/users"
 )
@@ -75,15 +77,21 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	profileRepo := pgrepo.NewProfileRepo(pool)
 	mediaRepo := pgrepo.NewMediaRepo(pool)
 	moderationRepo := pgrepo.NewModerationRepo(pool)
+	supportRepo := pgrepo.NewSupportRepo(pool)
 	quotaRepo := pgrepo.NewQuotaRepo(pool)
 	entitlementRepo := pgrepo.NewEntitlementRepo(pool)
 	eventRepo := pgrepo.NewEventRepo(pool)
 	purchaseRepo := pgrepo.NewPurchaseRepo(pool)
 	paymentTxRepo := pgrepo.NewPaymentTransactionRepo(pool)
 	userRepo := pgrepo.NewUserRepo(pool)
+	adminSessionRepo := pgrepo.NewAdminSessionRepo(pool)
 	userDeviceRepo := pgrepo.NewUserDeviceRepo(pool)
 	jwtManager := authsvc.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.JWTAccessTTL)
 	authService := authsvc.NewService(jwtManager, sessionRepo, cfg.Auth.RefreshTTL)
+	adminWebAuthService := adminauthsvc.NewService(cfg.Admin.WebJWTSecret, cfg.Admin.WebSessionIdleTimeout, adminSessionRepo)
+	if !adminWebAuthService.IsConfigured() {
+		log.Warn("admin web auth is not configured; /admin routes will reject requests")
+	}
 	authService.AttachUsers(authUserStoreAdapter{repo: userRepo})
 	authService.AttachDevices(userDeviceRepo)
 	geoService := geosvc.NewService(cfg.Remote.Cities, profileRepo)
@@ -192,6 +200,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 	mediaService := mediasvc.NewService(mediaRepo, mediaStorage)
 	feedService.AttachPhotoSigner(mediaStorage)
 	moderationService := modsvc.NewService(moderationRepo, profileRepo, mediaRepo, mediaStorage)
+	supportService := supportsvc.NewService(supportRepo)
 	moderationService.AttachDailyMetrics(dailyMetricsRepo)
 	userService := userssvc.NewService(pool, mediaRepo, mediaStorage)
 
@@ -202,6 +211,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		AnalyticsService:   analyticsService,
 		EntitlementService: entitlementService,
 		AuthService:        authService,
+		AdminWebAuth:       adminWebAuthService,
 		DailyMetricsRepo:   dailyMetricsRepo,
 		FeedService:        feedService,
 		GeoService:         geoService,
@@ -211,6 +221,7 @@ func New(ctx context.Context, cfg config.Config, log *zap.Logger) (*App, error) 
 		ModerationService:  moderationService,
 		PaymentService:     paymentService,
 		ProfileService:     profileService,
+		SupportService:     supportService,
 		SwipeService:       swipeService,
 		UserService:        userService,
 		Logger:             log,
