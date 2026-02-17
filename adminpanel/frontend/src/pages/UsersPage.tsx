@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Search, 
@@ -16,7 +16,8 @@ import {
   Clock,
   Phone,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { users } from '@/data/mockData';
@@ -125,6 +126,105 @@ function resolveInteractionProfiles(currentUser: User, type: InteractionType): U
   const length = Math.min(8, candidates.length);
 
   return Array.from({ length }, (_, index) => candidates[(start + index) % candidates.length]);
+}
+
+function parseLastActiveMinutes(lastActive: string): number | null {
+  const value = lastActive.trim().toLowerCase();
+  const minutesMatch = value.match(/(\d+)\s*min/);
+  if (minutesMatch) {
+    return Number(minutesMatch[1]);
+  }
+
+  const hoursMatch = value.match(/(\d+)\s*hour/);
+  if (hoursMatch) {
+    return Number(hoursMatch[1]) * 60;
+  }
+
+  const daysMatch = value.match(/(\d+)\s*day/);
+  if (daysMatch) {
+    return Number(daysMatch[1]) * 60 * 24;
+  }
+
+  return null;
+}
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
+
+function FilterDropdown({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: FilterOption[];
+  onChange: (nextValue: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? options[0]?.label ?? '';
+
+  return (
+    <div ref={rootRef} className="relative">
+      <span className="text-xs uppercase tracking-wide text-[#A7B1C8]">{label}</span>
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        className={cn(
+          'mt-1 w-full px-3 py-2 rounded-lg text-sm border flex items-center justify-between gap-2 transition-colors',
+          open
+            ? 'border-[rgba(123,97,255,0.55)] bg-[rgba(16,23,38,0.95)] text-[#F5F7FF]'
+            : 'border-[rgba(123,97,255,0.18)] bg-[rgba(14,19,32,0.8)] text-[#F5F7FF] hover:border-[rgba(123,97,255,0.35)]'
+        )}
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown className={cn('w-4 h-4 text-[#A7B1C8] transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 mt-2 z-30 rounded-xl border border-[rgba(123,97,255,0.28)] bg-[rgba(14,19,32,0.97)] backdrop-blur-xl shadow-[0_16px_40px_rgba(0,0,0,0.45)] max-h-64 overflow-auto scrollbar-thin">
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={`${label}_${option.value}`}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'w-full text-left px-3 py-2.5 text-sm transition-colors',
+                  active
+                    ? 'bg-[rgba(123,97,255,0.22)] text-[#E7E3FF]'
+                    : 'text-[#D4DBEF] hover:bg-[rgba(123,97,255,0.12)]'
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserProfileModal({
@@ -354,7 +454,7 @@ function UserProfileModal({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
                   <Clock className="w-5 h-5 text-[#A7B1C8]" />
                   <div>
@@ -369,13 +469,12 @@ function UserProfileModal({
                     <p className="text-sm text-[#F5F7FF]">{formatJoinedLabel(user.joined)}</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
-                <MapPin className="w-5 h-5 text-[#A7B1C8]" />
-                <div>
-                  <p className="text-sm text-[#A7B1C8]">Location</p>
-                  <p className="text-sm text-[#F5F7FF]">{user.location}</p>
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
+                  <MapPin className="w-5 h-5 text-[#A7B1C8]" />
+                  <div>
+                    <p className="text-sm text-[#A7B1C8]">Location</p>
+                    <p className="text-sm text-[#F5F7FF]">{user.location}</p>
+                  </div>
                 </div>
               </div>
 
@@ -630,6 +729,15 @@ function UserProfileModal({
 
 export function UsersPage() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [ageFrom, setAgeFrom] = useState('');
+  const [ageTo, setAgeTo] = useState('');
+  const [selectedCity, setSelectedCity] = useState('all');
+  const [selectedSubscription, setSelectedSubscription] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedTrustBand, setSelectedTrustBand] = useState('all');
+  const [selectedLastActive, setSelectedLastActive] = useState('all');
+  const [selectedGender, setSelectedGender] = useState('all');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const { hasPermission, role } = usePermissions();
@@ -637,11 +745,150 @@ export function UsersPage() {
   const canBanUsers = hasPermission(ADMIN_PERMISSIONS.ban_users);
   const canViewPrivateData = hasPermission(ADMIN_PERMISSIONS.view_private_data);
 
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.handle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const cityOptions = useMemo(
+    () => Array.from(new Set(users.map((user) => user.location))).sort((a, b) => a.localeCompare(b)),
+    []
   );
+  const subscriptionOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(users.map((user) => (user.isPremium ? user.subscriptionTier ?? 'Premium' : 'Free')))
+      ).sort((a, b) => a.localeCompare(b)),
+    []
+  );
+  const genderOptions = useMemo(
+    () => Array.from(new Set(users.map((user) => user.gender))).sort((a, b) => a.localeCompare(b)),
+    []
+  );
+
+  const statusFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'online', label: 'Online' },
+    { value: 'away', label: 'Away' },
+    { value: 'offline', label: 'Offline' },
+  ];
+  const trustFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'All trust scores' },
+    { value: '90_plus', label: '90+' },
+    { value: '80_89', label: '80-89' },
+    { value: 'under_80', label: 'Under 80' },
+  ];
+  const lastActiveFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'Any activity' },
+    { value: '15m', label: 'Last 15 min' },
+    { value: '1h', label: 'Last hour' },
+    { value: '24h', label: 'Last 24 hours' },
+    { value: '24h_plus', label: 'More than 24h ago' },
+  ];
+  const cityFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'All cities' },
+    ...cityOptions.map((city) => ({ value: city, label: city })),
+  ];
+  const subscriptionFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'All subscriptions' },
+    ...subscriptionOptions.map((subscription) => ({ value: subscription, label: subscription })),
+  ];
+  const genderFilterOptions: FilterOption[] = [
+    { value: 'all', label: 'All genders' },
+    ...genderOptions.map((gender) => ({ value: gender, label: gender })),
+  ];
+
+  const ageFromValue = ageFrom ? Number(ageFrom) : undefined;
+  const ageToValue = ageTo ? Number(ageTo) : undefined;
+  const normalizedAgeFrom = Number.isFinite(ageFromValue) ? ageFromValue : undefined;
+  const normalizedAgeTo = Number.isFinite(ageToValue) ? ageToValue : undefined;
+  const minAge = normalizedAgeFrom !== undefined && normalizedAgeTo !== undefined
+    ? Math.min(normalizedAgeFrom, normalizedAgeTo)
+    : normalizedAgeFrom;
+  const maxAge = normalizedAgeFrom !== undefined && normalizedAgeTo !== undefined
+    ? Math.max(normalizedAgeFrom, normalizedAgeTo)
+    : normalizedAgeTo;
+
+  const activeFilterCount = [
+    minAge !== undefined || maxAge !== undefined,
+    selectedCity !== 'all',
+    selectedSubscription !== 'all',
+    selectedStatus !== 'all',
+    selectedTrustBand !== 'all',
+    selectedLastActive !== 'all',
+    selectedGender !== 'all',
+  ].filter(Boolean).length;
+
+  const filteredUsers = users.filter((user) => {
+    const query = searchQuery.trim().toLowerCase();
+    const queryMatches =
+      !query ||
+      user.name.toLowerCase().includes(query) ||
+      user.handle.toLowerCase().includes(query) ||
+      user.email.toLowerCase().includes(query);
+
+    if (!queryMatches) {
+      return false;
+    }
+
+    if (minAge !== undefined && user.age < minAge) {
+      return false;
+    }
+    if (maxAge !== undefined && user.age > maxAge) {
+      return false;
+    }
+    if (selectedCity !== 'all' && user.location !== selectedCity) {
+      return false;
+    }
+
+    const userSubscription = user.isPremium ? user.subscriptionTier ?? 'Premium' : 'Free';
+    if (selectedSubscription !== 'all' && userSubscription !== selectedSubscription) {
+      return false;
+    }
+    if (selectedStatus !== 'all' && user.status !== selectedStatus) {
+      return false;
+    }
+    if (selectedGender !== 'all' && user.gender !== selectedGender) {
+      return false;
+    }
+
+    if (selectedTrustBand === '90_plus' && user.trustScore < 90) {
+      return false;
+    }
+    if (selectedTrustBand === '80_89' && (user.trustScore < 80 || user.trustScore > 89)) {
+      return false;
+    }
+    if (selectedTrustBand === 'under_80' && user.trustScore >= 80) {
+      return false;
+    }
+
+    const lastActiveMinutes = parseLastActiveMinutes(user.lastActive);
+    if (selectedLastActive !== 'all' && lastActiveMinutes === null) {
+      return false;
+    }
+    if (selectedLastActive !== 'all' && lastActiveMinutes !== null) {
+      if (selectedLastActive === '15m' && lastActiveMinutes > 15) {
+        return false;
+      }
+      if (selectedLastActive === '1h' && lastActiveMinutes > 60) {
+        return false;
+      }
+      if (selectedLastActive === '24h' && lastActiveMinutes > 60 * 24) {
+        return false;
+      }
+      if (selectedLastActive === '24h_plus' && lastActiveMinutes <= 60 * 24) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const resetFilters = () => {
+    setAgeFrom('');
+    setAgeTo('');
+    setSelectedCity('all');
+    setSelectedSubscription('all');
+    setSelectedStatus('all');
+    setSelectedTrustBand('all');
+    setSelectedLastActive('all');
+    setSelectedGender('all');
+  };
 
   const toggleRow = (id: string) => {
     const newSet = new Set(selectedRows);
@@ -740,7 +987,7 @@ export function UsersPage() {
       </div>
 
       {/* Table */}
-      <div className="glass-panel overflow-hidden">
+      <div className="glass-panel overflow-visible">
         {/* Table Toolbar */}
         <div className="p-4 border-b border-[rgba(123,97,255,0.12)] flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
@@ -753,9 +1000,22 @@ export function UsersPage() {
               className="w-full pl-10 pr-4 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.8)] border border-[rgba(123,97,255,0.18)] text-[#F5F7FF] placeholder:text-[rgba(167,177,200,0.6)] focus:border-[#7B61FF] focus:outline-none focus:ring-2 focus:ring-[rgba(123,97,255,0.15)]"
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.08)] transition-colors">
+          <button
+            onClick={() => setFiltersOpen((prev) => !prev)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors',
+              filtersOpen || activeFilterCount > 0
+                ? 'bg-[rgba(123,97,255,0.12)] text-[#CFC6FF] border border-[rgba(123,97,255,0.25)]'
+                : 'text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.08)] border border-transparent'
+            )}
+          >
             <Filter className="w-4 h-4" />
             Filter
+            {activeFilterCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[11px] bg-[rgba(123,97,255,0.25)] text-[#E7E3FF]">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
           {selectedRows.size > 0 && (
             <div className="flex items-center gap-2 ml-auto">
@@ -770,6 +1030,95 @@ export function UsersPage() {
             </div>
           )}
         </div>
+
+        {filtersOpen && (
+          <div className="px-4 pb-4 border-b border-[rgba(123,97,255,0.12)]">
+            <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.12)] space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                <label className="block">
+                  <span className="text-xs uppercase tracking-wide text-[#A7B1C8]">Age from</span>
+                  <input
+                    type="number"
+                    min={18}
+                    max={99}
+                    value={ageFrom}
+                    onChange={(event) => setAgeFrom(event.target.value)}
+                    placeholder="18"
+                    className="mt-1 w-full px-3 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.8)] border border-[rgba(123,97,255,0.18)] text-[#F5F7FF] placeholder:text-[rgba(167,177,200,0.6)] focus:outline-none focus:border-[#7B61FF] focus:ring-2 focus:ring-[rgba(123,97,255,0.15)]"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs uppercase tracking-wide text-[#A7B1C8]">Age to</span>
+                  <input
+                    type="number"
+                    min={18}
+                    max={99}
+                    value={ageTo}
+                    onChange={(event) => setAgeTo(event.target.value)}
+                    placeholder="35"
+                    className="mt-1 w-full px-3 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.8)] border border-[rgba(123,97,255,0.18)] text-[#F5F7FF] placeholder:text-[rgba(167,177,200,0.6)] focus:outline-none focus:border-[#7B61FF] focus:ring-2 focus:ring-[rgba(123,97,255,0.15)]"
+                  />
+                </label>
+
+                <FilterDropdown
+                  label="City"
+                  value={selectedCity}
+                  options={cityFilterOptions}
+                  onChange={setSelectedCity}
+                />
+
+                <FilterDropdown
+                  label="Subscription"
+                  value={selectedSubscription}
+                  options={subscriptionFilterOptions}
+                  onChange={setSelectedSubscription}
+                />
+
+                <FilterDropdown
+                  label="Status"
+                  value={selectedStatus}
+                  options={statusFilterOptions}
+                  onChange={setSelectedStatus}
+                />
+
+                <FilterDropdown
+                  label="Trust score"
+                  value={selectedTrustBand}
+                  options={trustFilterOptions}
+                  onChange={setSelectedTrustBand}
+                />
+
+                <FilterDropdown
+                  label="Last active"
+                  value={selectedLastActive}
+                  options={lastActiveFilterOptions}
+                  onChange={setSelectedLastActive}
+                />
+
+                <FilterDropdown
+                  label="Gender"
+                  value={selectedGender}
+                  options={genderFilterOptions}
+                  onChange={setSelectedGender}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-[#A7B1C8]">
+                  Found <span className="text-[#F5F7FF]">{filteredUsers.length}</span> users
+                </p>
+                <button
+                  onClick={resetFilters}
+                  disabled={activeFilterCount === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs text-[#A7B1C8] border border-[rgba(123,97,255,0.2)] hover:bg-[rgba(123,97,255,0.08)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Reset filters
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Table Content */}
         <div className="overflow-x-auto">

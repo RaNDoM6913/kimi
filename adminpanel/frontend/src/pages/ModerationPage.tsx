@@ -822,6 +822,27 @@ function filterCases({ cases, selectedType, selectedSubType, query }: FilterCase
     .sort((a, b) => a.createdAtTs - b.createdAtTs);
 }
 
+function formatDateToEuropean(value: string): string {
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) {
+    return value;
+  }
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+  }
+
+  const parsedDate = new Date(value);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const year = String(parsedDate.getFullYear());
+    return `${day}.${month}.${year}`;
+  }
+
+  return value;
+}
+
 let moderationCasesSnapshot: ModerationCase[] = unifiedCases;
 const moderationCasesListeners = new Set<(cases: ModerationCase[]) => void>();
 
@@ -1186,6 +1207,7 @@ function DetailPanel({
   const [notesByCaseId, setNotesByCaseId] = useState<Record<string, string>>({});
   const [noteTagsByCaseId, setNoteTagsByCaseId] = useState<Record<string, string[]>>({});
   const [replyDraftByCaseId, setReplyDraftByCaseId] = useState<Record<string, string>>({});
+  const onboardingHiddenTags = ['NSFW risk', 'Underage suspicion', 'Manual review'];
 
   useEffect(() => {
     if (!caseItem) {
@@ -1197,7 +1219,10 @@ function DetailPanel({
       if (prev[caseItem.id]) {
         return prev;
       }
-      return { ...prev, [caseItem.id]: caseItem.tags ?? [] };
+      const initialTags = (caseItem.tags ?? []).filter(
+        (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
+      );
+      return { ...prev, [caseItem.id]: initialTags };
     });
   }, [caseItem]);
 
@@ -1233,10 +1258,15 @@ function DetailPanel({
   }
 
   const currentNote = notesByCaseId[caseItem.id] ?? '';
-  const selectedNoteTags = noteTagsByCaseId[caseItem.id] ?? caseItem.tags ?? [];
-  const noteTagPool = Array.from(
-    new Set([...(caseItem.tags ?? []), 'NSFW risk', 'Underage suspicion', 'Link detected'])
+  const baseCaseTags = (caseItem.tags ?? []).filter(
+    (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
   );
+  const selectedNoteTags = (noteTagsByCaseId[caseItem.id] ?? baseCaseTags).filter(
+    (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
+  );
+  const noteTagPool = caseItem.type === 'onboarding'
+    ? baseCaseTags
+    : Array.from(new Set([...baseCaseTags, 'NSFW risk', 'Underage suspicion', 'Link detected']));
 
   const toggleNoteTag = (tag: string) => {
     setNoteTagsByCaseId((prev) => {
@@ -1286,7 +1316,7 @@ function DetailPanel({
             <div className="grid grid-cols-2 gap-2">
               {[
                 ['Display Name', caseItem.onboarding.displayName],
-                ['Birthday', caseItem.onboarding.birthday],
+                ['Birthday', formatDateToEuropean(caseItem.onboarding.birthday)],
                 ['Zodiac', caseItem.onboarding.zodiac],
                 ['Gender', caseItem.onboarding.gender],
                 ['Looking For', caseItem.onboarding.lookingFor],
@@ -1530,28 +1560,30 @@ function DetailPanel({
           className="mt-1 w-full min-h-28 resize-y px-3 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.55)] border border-[rgba(123,97,255,0.18)] text-[#F5F7FF] placeholder:text-[#A7B1C8] focus:outline-none focus:border-[rgba(123,97,255,0.4)]"
         />
       </label>
-      <div className="space-y-2">
-        <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">Tags</p>
-        <div className="flex flex-wrap gap-2">
-          {noteTagPool.map((tag) => {
-            const active = selectedNoteTags.includes(tag);
-            return (
-              <button
-                key={`${caseItem.id}_note_tag_${tag}`}
-                onClick={() => toggleNoteTag(tag)}
-                className={cn(
-                  'px-2 py-0.5 rounded-full text-xs border transition-colors',
-                  active
-                    ? 'bg-[rgba(123,97,255,0.18)] border-[rgba(123,97,255,0.35)] text-[#B7A9FF]'
-                    : 'border-[rgba(123,97,255,0.2)] text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)]'
-                )}
-              >
-                {tag}
-              </button>
-            );
-          })}
+      {noteTagPool.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">Tags</p>
+          <div className="flex flex-wrap gap-2">
+            {noteTagPool.map((tag) => {
+              const active = selectedNoteTags.includes(tag);
+              return (
+                <button
+                  key={`${caseItem.id}_note_tag_${tag}`}
+                  onClick={() => toggleNoteTag(tag)}
+                  className={cn(
+                    'px-2 py-0.5 rounded-full text-xs border transition-colors',
+                    active
+                      ? 'bg-[rgba(123,97,255,0.18)] border-[rgba(123,97,255,0.35)] text-[#B7A9FF]'
+                      : 'border-[rgba(123,97,255,0.2)] text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)]'
+                  )}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 
@@ -1572,25 +1604,33 @@ function DetailPanel({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
-              {caseItem.type}/{caseItem.subType}
-            </span>
-            <span className={cn('px-2 py-0.5 rounded-full text-xs uppercase', priorityClass[caseItem.priority])}>
-              {caseItem.priority}
-            </span>
-            {caseItem.slaLabel && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
-                {caseItem.slaLabel}
+            {caseItem.type === 'onboarding' ? (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
+                onboarding
               </span>
+            ) : (
+              <>
+                <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
+                  {caseItem.type}/{caseItem.subType}
+                </span>
+                <span className={cn('px-2 py-0.5 rounded-full text-xs uppercase', priorityClass[caseItem.priority])}>
+                  {caseItem.priority}
+                </span>
+                {caseItem.slaLabel && (
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
+                    {caseItem.slaLabel}
+                  </span>
+                )}
+                {(caseItem.tags ?? []).map((tag) => (
+                  <span
+                    key={`${caseItem.id}_tag_${tag}`}
+                    className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </>
             )}
-            {(caseItem.tags ?? []).map((tag) => (
-              <span
-                key={`${caseItem.id}_tag_${tag}`}
-                className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
-              >
-                {tag}
-              </span>
-            ))}
           </div>
 
           <div className="flex flex-wrap gap-1">
