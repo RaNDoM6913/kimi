@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Check, 
   X, 
@@ -9,32 +10,81 @@ import {
   Image as ImageIcon,
   MessageSquare,
   Filter,
-  Shield
+  Shield,
+  Phone,
+  Star,
+  Heart,
+  Clock,
+  Calendar,
+  MapPin,
+  Edit,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ADMIN_PERMISSIONS } from '@/admin/permissions';
 import { usePermissions } from '@/admin/usePermissions';
 import { getClientDevice, logAdminAction } from '@/admin/audit';
+import {
+  isSupportApiConfigured,
+  listSupportConversations,
+  listSupportMessages,
+  markSupportConversationRead,
+  sendSupportMessage,
+  setSupportConversationStatus,
+  type SupportConversationDTO,
+  type SupportConversationStatus,
+  type SupportMessageDTO,
+} from '@/lib/supportApi';
 
 type ModerationCaseType = 'onboarding' | 'report' | 'support';
 type ModerationPriority = 'low' | 'med' | 'high';
-type ModerationStatus = 'new' | 'in_review' | 'waiting' | 'escalated' | 'done';
+type ModerationStatus =
+  | 'new'
+  | 'in_review'
+  | 'changes_requested'
+  | 'approved'
+  | 'rejected'
+  | 'waiting_user'
+  | 'resolved';
 
-type ReportSubType = 'photo' | 'bio' | 'message';
-type OnboardingSubType = 'profile' | 'photos' | 'bio' | 'age';
+type ReportSubType = 'fake_profile' | 'scammer' | 'under_18' | 'other';
+type OnboardingSubType = 'new_user' | 'profile_update';
 type SupportSubType = 'payments' | 'account' | 'bugs' | 'safety' | 'other';
 
 type SupportMsgFrom = 'user' | 'admin' | 'system';
+type ProfileInteractionType = 'matches' | 'likes_sent' | 'likes_received';
+type ProfileLimitKind = 'daily_swipes' | 'super_likes' | 'boosts';
+
+type ProfileLimitsState = {
+  dailySwipesRemaining: number;
+  dailySwipesTotal: number;
+  superLikesRemaining: number;
+  superLikesTotal: number;
+  boostsRemaining: number;
+  boostsTotal: number;
+};
 
 interface UserSummary {
   id: string;
   name: string;
   username?: string;
   avatar?: string;
+  phone?: string;
   age?: number;
+  birthday?: string;
   zodiac?: string;
   city?: string;
   premium?: boolean;
+  gender?: string;
+  lookingFor?: string;
+  datingGoal?: string;
+  language?: string;
+  bio?: string;
+  photos?: string[];
+  heightCm?: number;
+  eyeColor?: string;
+  interests?: string[];
+  joinedAt?: string;
+  lastActiveLabel?: string;
 }
 
 interface OnboardingProfileData {
@@ -79,7 +129,9 @@ interface ModerationCase {
 
   // Reports
   reportReason?: string;
+  reportComment?: string;
   reportedBy?: string;
+  reporter?: UserSummary;
   contentText?: string;
   contentMediaUrl?: string;
 
@@ -101,7 +153,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_001',
     type: 'onboarding',
-    subType: 'profile',
+    subType: 'new_user',
     status: 'new',
     priority: 'high',
     createdAtLabel: '5m ago',
@@ -143,7 +195,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_002',
     type: 'onboarding',
-    subType: 'photos',
+    subType: 'new_user',
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '14m ago',
@@ -186,13 +238,13 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_003',
     type: 'onboarding',
-    subType: 'bio',
-    status: 'waiting',
+    subType: 'profile_update',
+    status: 'in_review',
     priority: 'low',
     createdAtLabel: '33m ago',
     createdAtTs: 1760570820000,
-    title: 'Onboarding bio verification: Elena P',
-    preview: 'Short bio requires language policy check.',
+    title: 'Profile update moderation: Elena P',
+    preview: 'Updated profile bio requires language policy check.',
     user: {
       id: 'u_1003',
       name: 'Elena Petrova',
@@ -228,13 +280,13 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_004',
     type: 'onboarding',
-    subType: 'age',
-    status: 'escalated',
+    subType: 'profile_update',
+    status: 'in_review',
     priority: 'high',
     createdAtLabel: '48m ago',
     createdAtTs: 1760569920000,
-    title: 'Age verification required: Lina S',
-    preview: 'Age confidence check dropped below threshold.',
+    title: 'Profile update moderation: Lina S',
+    preview: 'Updated photos require age-confidence revalidation.',
     user: {
       id: 'u_1004',
       name: 'Lina S',
@@ -271,7 +323,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_005',
     type: 'onboarding',
-    subType: 'profile',
+    subType: 'new_user',
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '1h ago',
@@ -313,13 +365,13 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'ob_006',
     type: 'onboarding',
-    subType: 'photos',
+    subType: 'profile_update',
     status: 'new',
     priority: 'high',
     createdAtLabel: '1h ago',
     createdAtTs: 1760569199000,
-    title: 'Onboarding photos check: Kate V',
-    preview: 'One photo requires explicit-content revalidation.',
+    title: 'Profile update moderation: Kate V',
+    preview: 'Updated photos require explicit-content revalidation.',
     user: {
       id: 'u_1006',
       name: 'Kate Voronova',
@@ -356,7 +408,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_001',
     type: 'report',
-    subType: 'photo',
+    subType: 'fake_profile',
     status: 'new',
     priority: 'high',
     createdAtLabel: '3m ago',
@@ -373,8 +425,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Budapest',
       premium: true,
     },
-    reportReason: 'Explicit content',
+    reportReason: 'Fake profile',
+    reportComment: 'Photos look AI-generated and profile details feel copied.',
     reportedBy: '@mila23',
+    reporter: {
+      id: 'u_9101',
+      name: 'Mila Romanova',
+      username: '@mila23',
+      avatar: 'https://i.pravatar.cc/150?img=41',
+      age: 27,
+      city: 'Budapest',
+      gender: 'Female',
+    },
     contentMediaUrl: 'https://picsum.photos/seed/rp001/720/720',
     tags: ['NSFW risk'],
     history: [
@@ -385,7 +447,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_002',
     type: 'report',
-    subType: 'bio',
+    subType: 'scammer',
     status: 'in_review',
     priority: 'med',
     createdAtLabel: '12m ago',
@@ -402,8 +464,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Lisbon',
       premium: false,
     },
-    reportReason: 'External links in bio',
+    reportReason: 'Scammer',
+    reportComment: 'Keeps sending promo links and asks to move to external chat immediately.',
     reportedBy: '@roman_88',
+    reporter: {
+      id: 'u_9102',
+      name: 'Roman Vasilev',
+      username: '@roman_88',
+      avatar: 'https://i.pravatar.cc/150?img=42',
+      age: 31,
+      city: 'Lisbon',
+      gender: 'Male',
+    },
     contentText: 'DM me on insta and check my channel: t.me/fastmoneygroup',
     tags: ['Link detected'],
     history: [
@@ -415,8 +487,8 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_003',
     type: 'report',
-    subType: 'message',
-    status: 'escalated',
+    subType: 'other',
+    status: 'in_review',
     priority: 'high',
     createdAtLabel: '26m ago',
     createdAtTs: 1760571240000,
@@ -432,8 +504,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Warsaw',
       premium: true,
     },
-    reportReason: 'Harassment / abuse',
+    reportReason: 'Other',
+    reportComment: 'Aggressive behavior in chat, repeated insults after match.',
     reportedBy: '@irina_m',
+    reporter: {
+      id: 'u_9103',
+      name: 'Irina M',
+      username: '@irina_m',
+      avatar: 'https://i.pravatar.cc/150?img=43',
+      age: 28,
+      city: 'Warsaw',
+      gender: 'Female',
+    },
     contentText: 'You are pathetic, reply now or I will spam your account.',
     history: [
       { id: 'rp_003_h1', text: 'Report received from chat screen', timestampLabel: '30m ago' },
@@ -444,8 +526,8 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_004',
     type: 'report',
-    subType: 'photo',
-    status: 'waiting',
+    subType: 'under_18',
+    status: 'new',
     priority: 'high',
     createdAtLabel: '42m ago',
     createdAtTs: 1760570280000,
@@ -461,8 +543,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Bratislava',
       premium: false,
     },
-    reportReason: 'Possible underage person',
+    reportReason: 'Under 18',
+    reportComment: 'Profile claims to be 20 but photos and text look much younger.',
     reportedBy: '@wolf_17',
+    reporter: {
+      id: 'u_9104',
+      name: 'Wolf K',
+      username: '@wolf_17',
+      avatar: 'https://i.pravatar.cc/150?img=44',
+      age: 24,
+      city: 'Bratislava',
+      gender: 'Male',
+    },
     contentMediaUrl: 'https://picsum.photos/seed/rp004/720/720',
     tags: ['Underage suspicion'],
     history: [
@@ -474,7 +566,7 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_005',
     type: 'report',
-    subType: 'message',
+    subType: 'scammer',
     status: 'new',
     priority: 'med',
     createdAtLabel: '52m ago',
@@ -491,8 +583,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Krakow',
       premium: true,
     },
-    reportReason: 'Spam / scam invite',
+    reportReason: 'Scammer',
+    reportComment: 'Promises easy money, pushes suspicious links in the first messages.',
     reportedBy: '@anya_t',
+    reporter: {
+      id: 'u_9105',
+      name: 'Anya T',
+      username: '@anya_t',
+      avatar: 'https://i.pravatar.cc/150?img=45',
+      age: 26,
+      city: 'Krakow',
+      gender: 'Female',
+    },
     contentText: 'Join now: https://short.example/earn-fast and get bonus.',
     tags: ['Link detected'],
     history: [
@@ -503,8 +605,8 @@ const unifiedCases: ModerationCase[] = [
   {
     id: 'rp_006',
     type: 'report',
-    subType: 'bio',
-    status: 'done',
+    subType: 'fake_profile',
+    status: 'in_review',
     priority: 'low',
     createdAtLabel: '2h ago',
     createdAtTs: 1760565600000,
@@ -520,8 +622,18 @@ const unifiedCases: ModerationCase[] = [
       city: 'Prague',
       premium: false,
     },
-    reportReason: 'Off-topic advertising',
+    reportReason: 'Fake profile',
+    reportComment: 'Bio is generic ad text and photo set seems stock.',
     reportedBy: '@mia_x',
+    reporter: {
+      id: 'u_9106',
+      name: 'Mia Xu',
+      username: '@mia_x',
+      avatar: 'https://i.pravatar.cc/150?img=46',
+      age: 25,
+      city: 'Prague',
+      gender: 'Female',
+    },
     contentText: 'Daily crypto tips in my channel. Subscribe for profit.',
     history: [
       { id: 'rp_006_h1', text: 'Bio warning issued to user', timestampLabel: '2h 20m ago' },
@@ -602,7 +714,7 @@ const unifiedCases: ModerationCase[] = [
     id: 'sp_003',
     type: 'support',
     subType: 'bugs',
-    status: 'waiting',
+    status: 'waiting_user',
     priority: 'med',
     createdAtLabel: '34m ago',
     createdAtTs: 1760570760000,
@@ -638,7 +750,7 @@ const unifiedCases: ModerationCase[] = [
     id: 'sp_004',
     type: 'support',
     subType: 'safety',
-    status: 'escalated',
+    status: 'in_review',
     priority: 'high',
     createdAtLabel: '47m ago',
     createdAtTs: 1760569980000,
@@ -709,7 +821,7 @@ const unifiedCases: ModerationCase[] = [
     id: 'sp_006',
     type: 'support',
     subType: 'payments',
-    status: 'waiting',
+    status: 'waiting_user',
     priority: 'med',
     createdAtLabel: '1h ago',
     createdAtTs: 1760569198000,
@@ -742,6 +854,127 @@ const unifiedCases: ModerationCase[] = [
   },
 ];
 
+const staticNonSupportCases: ModerationCase[] = unifiedCases.filter((caseItem) => caseItem.type !== 'support');
+const staticSupportFallbackCases: ModerationCase[] = unifiedCases.filter((caseItem) => caseItem.type === 'support');
+
+function toRelativeTimeLabel(value: Date): string {
+  const diffMs = Date.now() - value.getTime();
+  if (diffMs < 60_000) {
+    return 'just now';
+  }
+  if (diffMs < 3_600_000) {
+    return `${Math.max(1, Math.floor(diffMs / 60_000))}m ago`;
+  }
+  if (diffMs < 86_400_000) {
+    return `${Math.floor(diffMs / 3_600_000)}h ago`;
+  }
+  return `${Math.floor(diffMs / 86_400_000)}d ago`;
+}
+
+function toClockLabel(value: Date): string {
+  const hours = String(value.getHours()).padStart(2, '0');
+  const minutes = String(value.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function parseDateSafe(value: string | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
+function supportUsername(value: string): string | undefined {
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.startsWith('@') ? normalized : `@${normalized}`;
+}
+
+function mapSupportStatusToModeration(status: SupportConversationStatus): ModerationStatus {
+  if (status === 'waiting') {
+    return 'waiting_user';
+  }
+  if (status === 'done') {
+    return 'resolved';
+  }
+  if (status === 'escalated') {
+    return 'in_review';
+  }
+  return status;
+}
+
+function mapSupportConversationToCase(conversation: SupportConversationDTO): ModerationCase {
+  const createdAt = parseDateSafe(conversation.created_at) ?? new Date();
+  const lastMessageAt = parseDateSafe(conversation.last_message_at) ?? createdAt;
+  const userName =
+    conversation.display_name.trim() ||
+    `${conversation.first_name.trim()} ${conversation.last_name.trim()}`.trim() ||
+    supportUsername(conversation.username) ||
+    `User ${conversation.user_tg_id}`;
+
+  return {
+    id: `sp_live_${conversation.id}`,
+    type: 'support',
+    subType: conversation.category,
+    category: conversation.category,
+    status: mapSupportStatusToModeration(conversation.status),
+    priority: conversation.priority,
+    createdAtLabel: toRelativeTimeLabel(createdAt),
+    createdAtTs: createdAt.getTime(),
+    title: conversation.title.trim() || `Support ticket #${conversation.id}`,
+    preview: conversation.preview.trim() || 'Support ticket from Telegram support bot.',
+    user: {
+      id: conversation.app_user_id ? `u_${conversation.app_user_id}` : `tg_${conversation.user_tg_id}`,
+      name: userName,
+      username: supportUsername(conversation.app_username) ?? supportUsername(conversation.username),
+      age: conversation.age,
+      zodiac: conversation.zodiac.trim() || undefined,
+      city: conversation.city.trim() || undefined,
+      premium: conversation.premium,
+    },
+    history: [
+      {
+        id: `sp_live_${conversation.id}_last`,
+        text: `Last message ${toRelativeTimeLabel(lastMessageAt)}`,
+        timestampLabel: toRelativeTimeLabel(lastMessageAt),
+      },
+    ],
+  };
+}
+
+function mapSupportMessageToUI(message: SupportMessageDTO): SupportMessage {
+  const createdAt = parseDateSafe(message.created_at) ?? new Date();
+  const from: SupportMsgFrom =
+    message.from === 'admin' || message.from === 'system' || message.from === 'user'
+      ? message.from
+      : 'system';
+
+  return {
+    id: `spm_${message.id}`,
+    from,
+    text: message.text,
+    timestampLabel: toClockLabel(createdAt),
+  };
+}
+
+function supportConversationIDFromCaseID(caseID: string): number | null {
+  const match = caseID.match(/^sp_live_(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const id = Number(match[1]);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+  return Math.trunc(id);
+}
+
 type ModerationViewType = 'all' | ModerationCaseType;
 
 type FilterCasesParams = {
@@ -758,32 +991,65 @@ const typeTabs: Array<{ value: ModerationViewType; label: string }> = [
   { value: 'support', label: 'Support' },
 ];
 
+const reportSubTypeLabels: Record<ReportSubType, string> = {
+  fake_profile: 'Fake profile',
+  scammer: 'Scammer',
+  under_18: 'Under 18',
+  other: 'Other',
+};
+
+const onboardingSubTypeLabels: Record<OnboardingSubType, string> = {
+  new_user: 'New user',
+  profile_update: 'Profile update',
+};
+
+const supportSubTypeLabels: Record<SupportSubType, string> = {
+  payments: 'Payments',
+  account: 'Account',
+  bugs: 'Bugs',
+  safety: 'Safety',
+  other: 'Other',
+};
+
 const subTypeTabs: Record<Exclude<ModerationViewType, 'all'>, Array<{ value: string; label: string }>> = {
   report: [
-    { value: 'photo', label: 'Photos' },
-    { value: 'bio', label: 'Bios' },
-    { value: 'message', label: 'Messages' },
+    { value: 'fake_profile', label: reportSubTypeLabels.fake_profile },
+    { value: 'scammer', label: reportSubTypeLabels.scammer },
+    { value: 'under_18', label: reportSubTypeLabels.under_18 },
+    { value: 'other', label: reportSubTypeLabels.other },
   ],
   onboarding: [
-    { value: 'profile', label: 'Profiles' },
-    { value: 'photos', label: 'Photos' },
-    { value: 'bio', label: 'Bio' },
-    { value: 'age', label: 'Age' },
+    { value: 'new_user', label: onboardingSubTypeLabels.new_user },
+    { value: 'profile_update', label: onboardingSubTypeLabels.profile_update },
   ],
   support: [
-    { value: 'payments', label: 'Payments' },
-    { value: 'account', label: 'Account' },
-    { value: 'bugs', label: 'Bugs' },
-    { value: 'safety', label: 'Safety' },
-    { value: 'other', label: 'Other' },
+    { value: 'payments', label: supportSubTypeLabels.payments },
+    { value: 'account', label: supportSubTypeLabels.account },
+    { value: 'bugs', label: supportSubTypeLabels.bugs },
+    { value: 'safety', label: supportSubTypeLabels.safety },
+    { value: 'other', label: supportSubTypeLabels.other },
   ],
 };
 
-const priorityClass: Record<ModerationPriority, string> = {
-  high: 'bg-[rgba(255,107,107,0.15)] text-[#FF6B6B]',
-  med: 'bg-[rgba(255,209,102,0.15)] text-[#FFD166]',
-  low: 'bg-[rgba(123,97,255,0.15)] text-[#B7A9FF]',
+const statusLabels: Record<ModerationStatus, string> = {
+  new: 'New',
+  in_review: 'In review',
+  changes_requested: 'Changes requested',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  waiting_user: 'Waiting user',
+  resolved: 'Resolved',
 };
+
+function getSubTypeLabel(caseItem: ModerationCase): string {
+  if (caseItem.type === 'report') {
+    return reportSubTypeLabels[caseItem.subType as ReportSubType];
+  }
+  if (caseItem.type === 'onboarding') {
+    return onboardingSubTypeLabels[caseItem.subType as OnboardingSubType];
+  }
+  return supportSubTypeLabels[caseItem.subType as SupportSubType];
+}
 
 function getCountsByType(cases: ModerationCase[]) {
   return cases.reduce(
@@ -803,7 +1069,7 @@ function filterCases({ cases, selectedType, selectedSubType, query }: FilterCase
     .filter(
       (caseItem) =>
         !selectedSubType ||
-        (selectedType !== 'report' && selectedType !== 'support') ||
+        selectedType === 'all' ||
         caseItem.subType === selectedSubType
     )
     .filter((caseItem) => {
@@ -843,6 +1109,170 @@ function formatDateToEuropean(value: string): string {
   return value;
 }
 
+type ProfilePresence = 'online' | 'away' | 'offline';
+
+const profileStatusConfig: Record<
+  ProfilePresence,
+  { dot: string; bg: string; text: string; label: string }
+> = {
+  online: {
+    dot: 'bg-[#2DD4A8]',
+    bg: 'bg-[rgba(45,212,168,0.15)]',
+    text: 'text-[#2DD4A8]',
+    label: 'online',
+  },
+  away: {
+    dot: 'bg-[#FFD166]',
+    bg: 'bg-[rgba(255,209,102,0.18)]',
+    text: 'text-[#FFD166]',
+    label: 'away',
+  },
+  offline: {
+    dot: 'bg-[#A7B1C8]',
+    bg: 'bg-[rgba(167,177,200,0.18)]',
+    text: 'text-[#A7B1C8]',
+    label: 'offline',
+  },
+};
+
+function deriveProfilePresence(lastActiveLabel?: string): ProfilePresence {
+  if (!lastActiveLabel) {
+    return 'online';
+  }
+  const normalized = lastActiveLabel.toLowerCase();
+  if (normalized.includes('just now')) {
+    return 'online';
+  }
+  const minutesMatch = normalized.match(/(\d+)\s*m/);
+  if (minutesMatch) {
+    const minutes = Number(minutesMatch[1]);
+    if (Number.isFinite(minutes) && minutes <= 15) {
+      return 'online';
+    }
+    if (Number.isFinite(minutes) && minutes <= 180) {
+      return 'away';
+    }
+    return 'offline';
+  }
+  const hoursMatch = normalized.match(/(\d+)\s*h/);
+  if (hoursMatch) {
+    const hours = Number(hoursMatch[1]);
+    if (Number.isFinite(hours) && hours <= 2) {
+      return 'away';
+    }
+    return 'offline';
+  }
+  return 'offline';
+}
+
+function resolveTelegramId(value: string): string {
+  const explicitMatch = value.match(/^tg_(\d+)$/);
+  if (explicitMatch) {
+    return explicitMatch[1];
+  }
+
+  const digits = value.replace(/\D/g, '');
+  if (digits) {
+    return String(700000000 + Number(digits));
+  }
+
+  return 'unknown';
+}
+
+function formatJoinedSummary(value: string | undefined, fallbackTs: number): string {
+  const sourceDate = value ? new Date(value) : new Date(fallbackTs);
+  if (Number.isNaN(sourceDate.getTime())) {
+    return 'N/A';
+  }
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfJoined = new Date(
+    sourceDate.getFullYear(),
+    sourceDate.getMonth(),
+    sourceDate.getDate(),
+  );
+
+  const days = Math.max(
+    0,
+    Math.floor((startOfToday.getTime() - startOfJoined.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+  return `${days} days • ${formatDateToEuropean(sourceDate.toISOString().slice(0, 10))}`;
+}
+
+function seedMetric(seed: string, min: number, max: number): number {
+  const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return min + (hash % (max - min + 1));
+}
+
+function createInitialProfileLimits(userId: string): ProfileLimitsState {
+  return {
+    dailySwipesTotal: 120,
+    dailySwipesRemaining: seedMetric(`${userId}_swipes`, 20, 120),
+    superLikesTotal: 5,
+    superLikesRemaining: seedMetric(`${userId}_super`, 0, 5),
+    boostsTotal: 3,
+    boostsRemaining: seedMetric(`${userId}_boost`, 0, 3),
+  };
+}
+
+function resolveProfileInteractionProfiles(
+  user: UserSummary,
+  interaction: ProfileInteractionType,
+): UserSummary[] {
+  const names = [
+    'Emma Wilson',
+    'James Chen',
+    'Sofia Rodriguez',
+    'Michael Park',
+    'Isabella Martinez',
+    'Lucas Brown',
+    'Olivia Stone',
+    'Noah Carter',
+  ];
+
+  const handleBase = ['@emma_w', '@jamesc', '@sofia_r', '@mpark', '@bella_m', '@lucas_b', '@olivia_s', '@ncarter'];
+  const seed = `${user.id}_${interaction}`;
+  const count = seedMetric(seed, 4, 8);
+  const offset = seedMetric(`${seed}_offset`, 0, names.length - 1);
+
+  return Array.from({ length: count }).map((_, index) => {
+    const idx = (offset + index) % names.length;
+    const age = seedMetric(`${seed}_${index}_age`, 20, 39);
+    const idNumber = 500000 + seedMetric(`${seed}_${index}_id`, 1000, 9999);
+
+    return {
+      id: `u_${idNumber}`,
+      name: names[idx],
+      username: handleBase[idx],
+      avatar: `https://i.pravatar.cc/150?img=${60 + ((idx + index) % 20)}`,
+      age,
+      city: user.city ?? 'Unknown',
+      gender: index % 2 === 0 ? 'Female' : 'Male',
+      premium: index % 3 === 0,
+      phone: `+1 917 55${String(seedMetric(`${seed}_${index}_ph`, 100, 999)).padStart(3, '0')} ${String(seedMetric(`${seed}_${index}_ph2`, 1000, 9999)).padStart(4, '0')}`,
+      bio: `Interaction profile from ${interaction.replace('_', ' ')} list.`,
+      interests: ['Travel', 'Music', 'Gym', 'Cinema', 'Coffee'].slice(
+        0,
+        seedMetric(`${seed}_${index}_int`, 3, 5),
+      ),
+      joinedAt: new Date(
+        Date.now() - seedMetric(`${seed}_${index}_joined`, 10, 900) * 24 * 60 * 60 * 1000,
+      )
+        .toISOString()
+        .slice(0, 10),
+      lastActiveLabel: `${seedMetric(`${seed}_${index}_last`, 1, 180)}m ago`,
+      heightCm: seedMetric(`${seed}_${index}_height`, 155, 195),
+      eyeColor: ['Hazel', 'Blue', 'Brown', 'Green'][seedMetric(`${seed}_${index}_eye`, 0, 3)],
+      photos: [
+        `https://picsum.photos/seed/${seed}_${index}_a/600/800`,
+        `https://picsum.photos/seed/${seed}_${index}_b/600/800`,
+        `https://picsum.photos/seed/${seed}_${index}_c/600/800`,
+      ],
+    };
+  });
+}
+
 let moderationCasesSnapshot: ModerationCase[] = unifiedCases;
 const moderationCasesListeners = new Set<(cases: ModerationCase[]) => void>();
 
@@ -866,6 +1296,39 @@ function useModerationCasesSnapshot() {
 
 export function useModerationPendingCount() {
   return useModerationCasesSnapshot().length;
+}
+
+type ModerationChangeLogEntry = {
+  id: string;
+  createdAtISO: string;
+  type: 'action' | 'reply';
+  caseId: string;
+  caseType: ModerationCaseType;
+  subType: string;
+  targetUserId: string;
+  actorId: string;
+  payload: Record<string, string>;
+};
+
+const MODERATION_CHANGE_LOG_KEY = 'moderation_change_log_v1';
+
+function appendModerationChangeLog(entry: Omit<ModerationChangeLogEntry, 'id' | 'createdAtISO'>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(MODERATION_CHANGE_LOG_KEY);
+    const current: ModerationChangeLogEntry[] = raw ? (JSON.parse(raw) as ModerationChangeLogEntry[]) : [];
+    const nextEntry: ModerationChangeLogEntry = {
+      ...entry,
+      id: `mod_log_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+      createdAtISO: new Date().toISOString(),
+    };
+    window.localStorage.setItem(MODERATION_CHANGE_LOG_KEY, JSON.stringify([nextEntry, ...current].slice(0, 500)));
+  } catch (error) {
+    console.warn('Failed to persist moderation change log', error);
+  }
 }
 
 function ModerationHeaderSlot({ cases }: { cases: ModerationCase[] }) {
@@ -904,7 +1367,6 @@ type ModerationAction =
   | 'reject'
   | 'request_changes'
   | 'dismiss'
-  | 'remove_content'
   | 'warn'
   | 'ban'
   | 'resolve'
@@ -915,7 +1377,6 @@ const actionPermissions = {
   reject: ADMIN_PERMISSIONS.reject_profiles,
   request_changes: ADMIN_PERMISSIONS.moderate_profiles,
   dismiss: ADMIN_PERMISSIONS.reject_profiles,
-  remove_content: ADMIN_PERMISSIONS.reject_profiles,
   warn: ADMIN_PERMISSIONS.moderate_profiles,
   ban: ADMIN_PERMISSIONS.ban_users,
   resolve: ADMIN_PERMISSIONS.moderate_profiles,
@@ -927,7 +1388,6 @@ const actionMeta: Record<ModerationAction, { label: string; icon: ReactNode; ton
   reject: { label: 'Reject', icon: <X className="w-4 h-4" />, tone: 'danger' },
   request_changes: { label: 'Request changes', icon: <MessageSquare className="w-4 h-4" />, tone: 'neutral' },
   dismiss: { label: 'Dismiss', icon: <Check className="w-4 h-4" />, tone: 'primary' },
-  remove_content: { label: 'Remove content', icon: <X className="w-4 h-4" />, tone: 'danger' },
   warn: { label: 'Warn', icon: <AlertTriangle className="w-4 h-4" />, tone: 'warn' },
   ban: { label: 'Ban', icon: <Ban className="w-4 h-4" />, tone: 'danger' },
   resolve: { label: 'Resolve', icon: <Check className="w-4 h-4" />, tone: 'primary' },
@@ -936,7 +1396,7 @@ const actionMeta: Record<ModerationAction, { label: string; icon: ReactNode; ton
 
 const actionsByType: Record<ModerationCaseType, ModerationAction[]> = {
   onboarding: ['approve', 'reject', 'request_changes'],
-  report: ['dismiss', 'remove_content', 'warn', 'ban'],
+  report: ['dismiss', 'warn', 'ban'],
   support: ['resolve', 'request_info'],
 };
 
@@ -957,10 +1417,7 @@ function FiltersBar({
   query: string;
   onChangeQuery: (value: string) => void;
 }) {
-  const activeSubTabs =
-    selectedType === 'report' || selectedType === 'support'
-      ? subTypeTabs[selectedType]
-      : [];
+  const activeSubTabs = selectedType === 'all' ? [] : subTypeTabs[selectedType];
 
   return (
     <div className="p-3 border-b border-[rgba(123,97,255,0.12)] space-y-2">
@@ -1104,24 +1561,11 @@ function QueueList({
                     ) : (
                       <>
                         <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
-                          {caseItem.type}/{caseItem.subType}
+                          {caseItem.type}/{getSubTypeLabel(caseItem)}
                         </span>
-                        <span className={cn('px-1.5 py-0.5 rounded text-[10px] uppercase', priorityClass[caseItem.priority])}>
-                          {caseItem.priority}
+                        <span className="px-1.5 py-0.5 rounded text-[10px] border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]">
+                          {statusLabels[caseItem.status]}
                         </span>
-                        {caseItem.type === 'support' && caseItem.slaLabel && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
-                            {caseItem.slaLabel}
-                          </span>
-                        )}
-                        {(caseItem.tags ?? []).slice(0, 2).map((tag) => (
-                          <span
-                            key={`${caseItem.id}_${tag}`}
-                            className="px-1.5 py-0.5 rounded text-[10px] border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
-                          >
-                            {tag}
-                          </span>
-                        ))}
                       </>
                     )}
                   </div>
@@ -1194,12 +1638,14 @@ function DetailPanel({
   canAction,
   onSendSupportReply,
   onOpenViewer,
+  onOpenUserProfile,
 }: {
   caseItem: ModerationCase | null;
   onAction: (action: ModerationAction) => void;
   canAction: (action: ModerationAction) => boolean;
   onSendSupportReply: (caseId: string, text: string) => void;
   onOpenViewer: (photos: string[], startIndex: number) => void;
+  onOpenUserProfile: (user: UserSummary, contextCase: ModerationCase) => void;
 }) {
   type DetailTab = 'evidence' | 'user' | 'history' | 'notes';
 
@@ -1344,6 +1790,12 @@ function DetailPanel({
     }
 
     if (caseItem.type === 'report') {
+      const reporter: UserSummary = caseItem.reporter ?? {
+        id: `reporter_${caseItem.id}`,
+        name: caseItem.reportedBy ?? 'Unknown reporter',
+        username: caseItem.reportedBy,
+      };
+
       return (
         <div className="space-y-4">
           {caseItem.contentMediaUrl && (
@@ -1353,27 +1805,45 @@ function DetailPanel({
               className="max-w-md rounded-xl border border-[rgba(123,97,255,0.2)]"
             />
           )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <button
+              onClick={() => onOpenUserProfile(reporter, caseItem)}
+              className="text-left p-3 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.12)] hover:border-[rgba(123,97,255,0.3)] transition-colors"
+            >
+              <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Reported by</p>
+              <p className="text-sm text-[#F5F7FF]">{reporter.name}</p>
+              <p className="text-xs text-[#A7B1C8]">{reporter.username ?? reporter.id}</p>
+            </button>
+            <button
+              onClick={() => onOpenUserProfile(caseItem.user, caseItem)}
+              className="text-left p-3 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.12)] hover:border-[rgba(123,97,255,0.3)] transition-colors"
+            >
+              <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Reported profile</p>
+              <p className="text-sm text-[#F5F7FF]">{caseItem.user.name}</p>
+              <p className="text-xs text-[#A7B1C8]">{caseItem.user.username ?? caseItem.user.id}</p>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="p-3 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]">
+              <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Reason</p>
+              <p className="text-sm text-[#FF6B6B]">{caseItem.reportReason ?? getSubTypeLabel(caseItem)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]">
+              <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Reporter comment</p>
+              <p className="text-sm text-[#F5F7FF]">{caseItem.reportComment ?? 'No comment provided.'}</p>
+            </div>
+          </div>
+
           {caseItem.contentText && (
             <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+              <p className="text-xs uppercase tracking-wide text-[#A7B1C8] mb-1">Reported content</p>
               <p className="text-sm text-[#F5F7FF]">{caseItem.contentText}</p>
             </div>
           )}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-[#A7B1C8]">Reported by:</span>
-              <span className="text-[#F5F7FF]">{caseItem.reportedBy ?? 'Unknown'}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-[#A7B1C8]">Reason:</span>
-              <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(255,107,107,0.15)] text-[#FF6B6B]">
-                {caseItem.reportReason ?? 'N/A'}
-              </span>
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)] space-y-1">
-            <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">User Summary</p>
-            <p className="text-sm text-[#F5F7FF]">{caseItem.user.name} ({caseItem.user.id})</p>
-            <p className="text-xs text-[#A7B1C8]">{caseItem.user.username ?? 'No username'} • {caseItem.user.city ?? 'Unknown city'}</p>
+
+          <div className="text-xs text-[#A7B1C8]">
+            Click reporter or target profile to open full user details.
           </div>
         </div>
       );
@@ -1398,17 +1868,15 @@ function DetailPanel({
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2">
           {[
-            ['Category', caseItem.category ?? caseItem.subType],
-            ['SLA', caseItem.slaLabel ?? 'N/A'],
-            ['Priority', caseItem.priority],
-            ['Status', caseItem.status],
+            ['Category', supportSubTypeLabels[(caseItem.category ?? caseItem.subType) as SupportSubType]],
+            ['Status', statusLabels[caseItem.status]],
           ].map(([label, value]) => (
             <div
               key={`${caseItem.id}_support_${label}`}
               className="p-3 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]"
             >
               <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">{label}</p>
-              <p className="text-sm text-[#F5F7FF] capitalize">{value}</p>
+              <p className="text-sm text-[#F5F7FF]">{value}</p>
             </div>
           ))}
         </div>
@@ -1417,6 +1885,15 @@ function DetailPanel({
           <p className="text-xs uppercase tracking-wide text-[#A7B1C8] mb-1">Description</p>
           <p className="text-sm text-[#F5F7FF]">{supportDescription}</p>
         </div>
+
+        <button
+          onClick={() => onOpenUserProfile(caseItem.user, caseItem)}
+          className="w-full text-left p-3 rounded-xl bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.12)] hover:border-[rgba(123,97,255,0.3)] transition-colors"
+        >
+          <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">User</p>
+          <p className="text-sm text-[#F5F7FF]">{caseItem.user.name}</p>
+          <p className="text-xs text-[#A7B1C8]">{caseItem.user.username ?? caseItem.user.id}</p>
+        </button>
 
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">Thread</p>
@@ -1485,7 +1962,10 @@ function DetailPanel({
   };
 
   const renderUser = () => (
-    <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+    <button
+      onClick={() => onOpenUserProfile(caseItem.user, caseItem)}
+      className="w-full text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+    >
       <div className="flex items-start gap-3">
         {caseItem.user.avatar ? (
           <img
@@ -1521,7 +2001,8 @@ function DetailPanel({
           City: {caseItem.user.city ?? 'N/A'}
         </span>
       </div>
-    </div>
+      <p className="mt-3 text-xs text-[#A7B1C8]">Click to open full profile</p>
+    </button>
   );
 
   const renderHistory = () => (
@@ -1611,24 +2092,11 @@ function DetailPanel({
             ) : (
               <>
                 <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
-                  {caseItem.type}/{caseItem.subType}
+                  {caseItem.type}/{getSubTypeLabel(caseItem)}
                 </span>
-                <span className={cn('px-2 py-0.5 rounded-full text-xs uppercase', priorityClass[caseItem.priority])}>
-                  {caseItem.priority}
+                <span className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]">
+                  {statusLabels[caseItem.status]}
                 </span>
-                {caseItem.slaLabel && (
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(45,212,168,0.15)] text-[#2DD4A8]">
-                    {caseItem.slaLabel}
-                  </span>
-                )}
-                {(caseItem.tags ?? []).map((tag) => (
-                  <span
-                    key={`${caseItem.id}_tag_${tag}`}
-                    className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]"
-                  >
-                    {tag}
-                  </span>
-                ))}
               </>
             )}
           </div>
@@ -1663,16 +2131,24 @@ function DetailPanel({
 }
 
 export function ModerationPage() {
-  const [cases, setCases] = useState<ModerationCase[]>(unifiedCases);
+  const initialCases = [...staticNonSupportCases, ...staticSupportFallbackCases];
+  const [cases, setCases] = useState<ModerationCase[]>(initialCases);
   const [selectedType, setSelectedType] = useState<ModerationViewType>('all');
   const [selectedSubType, setSelectedSubType] = useState('');
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(unifiedCases[0]?.id ?? null);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(initialCases[0]?.id ?? null);
   const [query, setQuery] = useState('');
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
+  const [profileViewer, setProfileViewer] = useState<{ user: UserSummary; contextCase: ModerationCase } | null>(null);
+  const [profileActiveTab, setProfileActiveTab] = useState<'activity' | 'limits' | 'moderation'>('activity');
+  const [profileActiveInteraction, setProfileActiveInteraction] = useState<ProfileInteractionType | null>(null);
+  const [profileLimitsByUserId, setProfileLimitsByUserId] = useState<Record<string, ProfileLimitsState>>({});
+  const [profileLimitsEditMode, setProfileLimitsEditMode] = useState(false);
+  const supportAPIEnabled = isSupportApiConfigured();
   const { hasPermission, role } = usePermissions();
   const totalPending = cases.length;
+  const canChangeLimits = hasPermission(ADMIN_PERMISSIONS.change_limits);
 
   const openViewer = (photos: string[], startIndex: number) => {
     if (photos.length === 0) {
@@ -1688,6 +2164,19 @@ export function ModerationPage() {
     setViewerOpen(false);
     setViewerPhotos([]);
     setViewerIndex(0);
+  };
+
+  const openProfileViewer = (user: UserSummary, contextCase: ModerationCase) => {
+    setProfileViewer({ user, contextCase });
+    setProfileActiveTab('activity');
+    setProfileActiveInteraction(null);
+    setProfileLimitsEditMode(false);
+  };
+
+  const closeProfileViewer = () => {
+    setProfileViewer(null);
+    setProfileActiveInteraction(null);
+    setProfileLimitsEditMode(false);
   };
 
   const nextViewer = () => {
@@ -1753,9 +2242,151 @@ export function ModerationPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [viewerOpen, viewerPhotos.length]);
 
+  useEffect(() => {
+    if (!profileViewer || viewerOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeProfileViewer();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [profileViewer, viewerOpen]);
+
+  useEffect(() => {
+    if (!profileViewer) {
+      return;
+    }
+
+    const userId = profileViewer.user.id;
+    setProfileLimitsByUserId((prev) =>
+      prev[userId] ? prev : { ...prev, [userId]: createInitialProfileLimits(userId) },
+    );
+  }, [profileViewer?.user.id]);
+
+  useEffect(() => {
+    if (!supportAPIEnabled) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSupportConversations = async () => {
+      try {
+        const conversations = await listSupportConversations({ limit: 200, offset: 0 });
+        if (cancelled) {
+          return;
+        }
+
+        const liveSupportCases = conversations
+          .filter((conversation) => conversation.status !== 'done')
+          .map(mapSupportConversationToCase);
+        setCases((prevCases) => {
+          const existingMessagesByCase = new Map(
+            prevCases
+              .filter((caseItem) => caseItem.type === 'support')
+              .map((caseItem) => [caseItem.id, caseItem.messages]),
+          );
+
+          const mergedSupportCases = liveSupportCases.map((caseItem) => {
+            const existingMessages = existingMessagesByCase.get(caseItem.id);
+            if (!existingMessages || existingMessages.length === 0) {
+              return caseItem;
+            }
+            return {
+              ...caseItem,
+              messages: existingMessages,
+            };
+          });
+
+          return [...prevCases.filter((caseItem) => caseItem.type !== 'support'), ...mergedSupportCases];
+        });
+      } catch (error) {
+        console.warn('Failed to sync support conversations', error);
+      }
+    };
+
+    void syncSupportConversations();
+    const intervalID = window.setInterval(() => {
+      void syncSupportConversations();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalID);
+    };
+  }, [supportAPIEnabled]);
+
+  useEffect(() => {
+    if (!supportAPIEnabled || !selectedCase || selectedCase.type !== 'support') {
+      return;
+    }
+
+    const conversationID = supportConversationIDFromCaseID(selectedCase.id);
+    if (!conversationID) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadMessages = async () => {
+      try {
+        const messages = await listSupportMessages(conversationID, 200);
+        if (cancelled) {
+          return;
+        }
+
+        const mappedMessages = messages.map(mapSupportMessageToUI);
+        setCases((prevCases) =>
+          prevCases.map((caseItem) =>
+            caseItem.id === selectedCase.id
+              ? {
+                  ...caseItem,
+                  messages: mappedMessages,
+                }
+              : caseItem,
+          ),
+        );
+
+        await markSupportConversationRead(conversationID);
+      } catch (error) {
+        console.warn('Failed to load support messages', error);
+      }
+    };
+
+    void loadMessages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supportAPIEnabled, selectedCase?.id, selectedCase?.type]);
+
   const canAction = (action: ModerationAction) => hasPermission(actionPermissions[action]);
 
-  const handleAction = (action: ModerationAction) => {
+  const removeCaseFromQueue = (caseID: string) => {
+    setCases((prevCases) => {
+      const nextCases = prevCases.filter((caseItem) => caseItem.id !== caseID);
+      const nextFilteredCases = filterCases({
+        cases: nextCases,
+        selectedType,
+        selectedSubType,
+        query,
+      });
+      const nextSelectedCaseID = nextFilteredCases[0]?.id ?? null;
+
+      queueMicrotask(() => {
+        setSelectedCaseId(nextSelectedCaseID);
+      });
+
+      return nextCases;
+    });
+  };
+
+  const handleAction = async (action: ModerationAction) => {
     if (!selectedCase || !canAction(action)) {
       return;
     }
@@ -1766,23 +2397,55 @@ export function ModerationPage() {
       '127.0.0.1',
       getClientDevice(),
     );
-
-    setCases((prevCases) => {
-      const nextCases = prevCases.filter((caseItem) => caseItem.id !== selectedCase.id);
-      const nextFilteredCases = filterCases({
-        cases: nextCases,
-        selectedType,
-        selectedSubType,
-        query,
-      });
-      const nextSelectedCaseId = nextFilteredCases[0]?.id ?? null;
-
-      queueMicrotask(() => {
-        setSelectedCaseId(nextSelectedCaseId);
-      });
-
-      return nextCases;
+    appendModerationChangeLog({
+      type: 'action',
+      caseId: selectedCase.id,
+      caseType: selectedCase.type,
+      subType: selectedCase.subType,
+      targetUserId: selectedCase.user.id,
+      actorId: 'current-admin',
+      payload: {
+        action,
+        statusBefore: selectedCase.status,
+      },
     });
+
+    if (selectedCase.type === 'support' && supportAPIEnabled) {
+      const conversationID = supportConversationIDFromCaseID(selectedCase.id);
+      if (!conversationID) {
+        removeCaseFromQueue(selectedCase.id);
+        return;
+      }
+
+      try {
+        if (action === 'resolve') {
+          await setSupportConversationStatus(conversationID, 'done');
+          removeCaseFromQueue(selectedCase.id);
+          return;
+        }
+
+        if (action === 'request_info') {
+          const nextStatus: SupportConversationStatus = 'waiting';
+          await setSupportConversationStatus(conversationID, nextStatus);
+          setCases((prevCases) =>
+            prevCases.map((caseItem) =>
+              caseItem.id === selectedCase.id
+                ? {
+                    ...caseItem,
+                    status: mapSupportStatusToModeration(nextStatus),
+                  }
+                : caseItem,
+            ),
+          );
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to update support conversation status', error);
+        return;
+      }
+    }
+
+    removeCaseFromQueue(selectedCase.id);
   };
 
   const handleSelectType = (type: ModerationViewType) => {
@@ -1790,7 +2453,7 @@ export function ModerationPage() {
     setSelectedSubType('');
   };
 
-  const handleSendSupportReply = (caseId: string, text: string) => {
+  const handleSendSupportReply = async (caseId: string, text: string) => {
     const message = text.trim();
     if (!message) {
       return;
@@ -1801,12 +2464,40 @@ export function ModerationPage() {
       return;
     }
 
-    console.log({
+    appendModerationChangeLog({
+      type: 'reply',
       caseId: targetCase.id,
-      userId: targetCase.user.id,
-      username: targetCase.user.username,
-      message,
+      caseType: targetCase.type,
+      subType: targetCase.subType,
+      targetUserId: targetCase.user.id,
+      actorId: 'current-admin',
+      payload: {
+        message,
+      },
     });
+
+    const conversationID = supportConversationIDFromCaseID(caseId);
+    if (supportAPIEnabled && conversationID) {
+      try {
+        const response = await sendSupportMessage(conversationID, message);
+        setCases((prevCases) =>
+          prevCases.map((caseItem) =>
+            caseItem.id === caseId
+              ? {
+                  ...caseItem,
+                  status: 'in_review',
+                  preview: message,
+                  messages: [...(caseItem.messages ?? []), mapSupportMessageToUI(response.message)],
+                }
+              : caseItem,
+          ),
+        );
+        return;
+      } catch (error) {
+        console.warn('Failed to send support reply', error);
+        return;
+      }
+    }
 
     setCases((prev) =>
       prev.map((caseItem) =>
@@ -1821,6 +2512,121 @@ export function ModerationPage() {
           : caseItem
       )
     );
+  };
+
+  const profileContextOnboarding = profileViewer?.contextCase.onboarding;
+  const profilePresence = deriveProfilePresence(
+    profileViewer?.user.lastActiveLabel ?? profileViewer?.contextCase.createdAtLabel,
+  );
+  const profileStatus = profileStatusConfig[profilePresence];
+  const profileTelegramId = profileViewer ? resolveTelegramId(profileViewer.user.id) : 'unknown';
+  const profilePhotos =
+    profileViewer?.user.photos && profileViewer.user.photos.length > 0
+      ? profileViewer.user.photos
+      : profileContextOnboarding?.photos ??
+        (profileViewer?.user.avatar ? [profileViewer.user.avatar] : []);
+  const profileHeight = profileViewer?.user.heightCm ?? seedMetric(`${profileViewer?.user.id ?? 'u'}_h`, 155, 195);
+  const profileEyeColor = profileViewer?.user.eyeColor ?? ['Hazel', 'Blue', 'Brown', 'Green'][seedMetric(`${profileViewer?.user.id ?? 'u'}_e`, 0, 3)];
+  const profileMatches = seedMetric(`${profileViewer?.user.id ?? 'u'}_m`, 12, 96);
+  const profileLikesSent = seedMetric(`${profileViewer?.user.id ?? 'u'}_ls`, 25, 180);
+  const profileLikesReceived = seedMetric(`${profileViewer?.user.id ?? 'u'}_lr`, 35, 220);
+  const profileTrustScore = seedMetric(`${profileViewer?.user.id ?? 'u'}_ts`, 72, 99);
+  const profileInterests =
+    profileViewer?.user.interests && profileViewer.user.interests.length > 0
+      ? profileViewer.user.interests
+      : ['Travel', 'Music', 'Gym', 'Cinema', 'Coffee'];
+  const profileBio = profileViewer?.user.bio ?? profileContextOnboarding?.bio ?? '';
+  const profileGender = profileViewer?.user.gender ?? profileContextOnboarding?.gender ?? 'N/A';
+  const profileAge = profileViewer?.user.age ?? seedMetric(`${profileViewer?.user.id ?? 'u'}_a`, 21, 39);
+  const profileLocation = profileViewer?.user.city ?? profileContextOnboarding?.city ?? 'Unknown';
+  const profileLastActive = profileViewer?.user.lastActiveLabel ?? profileViewer?.contextCase.createdAtLabel ?? 'N/A';
+  const profileJoined = profileViewer
+    ? formatJoinedSummary(profileViewer.user.joinedAt, profileViewer.contextCase.createdAtTs)
+    : 'N/A';
+  const profileFields = profileViewer
+    ? [
+        ['Display name', profileContextOnboarding?.displayName ?? profileViewer.user.name],
+        [
+          'Birthday',
+          profileViewer.user.birthday
+            ? formatDateToEuropean(profileViewer.user.birthday)
+            : profileContextOnboarding?.birthday
+            ? formatDateToEuropean(profileContextOnboarding.birthday)
+            : 'N/A',
+        ],
+        ['Gender', profileViewer.user.gender ?? profileContextOnboarding?.gender ?? 'N/A'],
+        ['Looking for', profileViewer.user.lookingFor ?? profileContextOnboarding?.lookingFor ?? 'N/A'],
+        ['Dating goal', profileViewer.user.datingGoal ?? profileContextOnboarding?.datingGoal ?? 'N/A'],
+        ['Language', profileViewer.user.language ?? profileContextOnboarding?.language ?? 'N/A'],
+        ['City', profileViewer.user.city ?? profileContextOnboarding?.city ?? 'N/A'],
+        ['Age', String(profileAge)],
+        ['Zodiac', profileViewer.user.zodiac ?? profileContextOnboarding?.zodiac ?? 'N/A'],
+        ['Phone', profileViewer.user.phone ?? 'N/A'],
+      ]
+    : [];
+  const profileLimits = profileViewer
+    ? profileLimitsByUserId[profileViewer.user.id] ?? createInitialProfileLimits(profileViewer.user.id)
+    : null;
+  const profileInteractionProfiles =
+    profileViewer && profileActiveInteraction
+      ? resolveProfileInteractionProfiles(profileViewer.user, profileActiveInteraction)
+      : [];
+  const profileInteractionTitle =
+    profileActiveInteraction === 'matches'
+      ? 'Matches'
+      : profileActiveInteraction === 'likes_sent'
+        ? 'Likes Sent'
+        : 'Likes Received';
+  const limitAdjustButtonClass =
+    'w-6 h-6 rounded-md border border-[rgba(123,97,255,0.25)] text-[#CFC6FF] hover:bg-[rgba(123,97,255,0.18)] disabled:opacity-0 disabled:pointer-events-none';
+
+  const handleProfileEditLimits = () => {
+    if (!profileViewer || !canChangeLimits) {
+      return;
+    }
+
+    if (profileLimitsEditMode) {
+      logAdminAction(
+        `save_limits_${profileViewer.user.id}`,
+        { id: 'current-admin', role },
+        '127.0.0.1',
+        getClientDevice(),
+      );
+      setProfileLimitsEditMode(false);
+      return;
+    }
+
+    logAdminAction(
+      `edit_limits_${profileViewer.user.id}`,
+      { id: 'current-admin', role },
+      '127.0.0.1',
+      getClientDevice(),
+    );
+    setProfileLimitsEditMode(true);
+  };
+
+  const adjustProfileLimit = (kind: ProfileLimitKind, delta: number) => {
+    if (!profileViewer || !profileLimitsEditMode) {
+      return;
+    }
+
+    const userId = profileViewer.user.id;
+    setProfileLimitsByUserId((prev) => {
+      const current = prev[userId] ?? createInitialProfileLimits(userId);
+      const next = { ...current };
+
+      if (kind === 'daily_swipes') {
+        next.dailySwipesRemaining = Math.max(0, next.dailySwipesRemaining + delta);
+      }
+      if (kind === 'super_likes') {
+        next.superLikesRemaining = Math.max(0, next.superLikesRemaining + delta);
+      }
+      if (kind === 'boosts') {
+        next.boostsRemaining = Math.max(0, next.boostsRemaining + delta);
+      }
+
+      return { ...prev, [userId]: next };
+    });
   };
 
   return (
@@ -1849,10 +2655,464 @@ export function ModerationPage() {
           canAction={canAction}
           onSendSupportReply={handleSendSupportReply}
           onOpenViewer={openViewer}
+          onOpenUserProfile={openProfileViewer}
         />
       </div>
 
-      {viewerOpen && viewerPhotos.length > 0 && (
+      {typeof document !== 'undefined' && profileViewer && createPortal(
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+        >
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeProfileViewer}
+          />
+          <div
+            className="relative w-full max-w-2xl glass-panel max-h-[90vh] overflow-hidden flex flex-col animate-slide-up"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-6 border-b border-[rgba(123,97,255,0.12)]">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => profilePhotos.length > 0 && openViewer(profilePhotos, 0)}
+                    className="relative rounded-2xl transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[rgba(123,97,255,0.3)]"
+                    aria-label="Open profile photos"
+                  >
+                    {profileViewer.user.avatar ? (
+                      <img
+                        src={profileViewer.user.avatar}
+                        alt={profileViewer.user.name}
+                        className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)] cursor-zoom-in object-cover"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)] bg-[rgba(123,97,255,0.12)] flex items-center justify-center text-2xl text-[#B7A9FF]">
+                        {profileViewer.user.name.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <span
+                      className={cn(
+                        'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-[#0E1320]',
+                        profileStatus.dot,
+                      )}
+                    />
+                  </button>
+
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-bold text-[#F5F7FF]">
+                      {profileViewer.user.name}, {profileAge}
+                    </h3>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-[#A7B1C8]">
+                      <span>{profileViewer.user.username ?? 'No username'}</span>
+                      <span className="text-[rgba(167,177,200,0.5)]">•</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5" />
+                        {profileViewer.user.phone ?? 'No phone'}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-sm text-[#A7B1C8]">Telegram ID: {profileTelegramId}</p>
+
+                    <div className="flex items-center gap-3 mt-2 flex-wrap">
+                      <span
+                        className={cn(
+                          'px-2 py-0.5 rounded-full text-xs font-medium',
+                          profileStatus.bg,
+                          profileStatus.text,
+                        )}
+                      >
+                        {profileStatus.label}
+                      </span>
+                      {profileViewer.user.premium && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[rgba(123,97,255,0.15)] text-[#7B61FF] flex items-center gap-1">
+                          <Star className="w-3 h-3" />
+                          Gold
+                        </span>
+                      )}
+                      <span className="text-xs text-[#A7B1C8]">
+                        {profileHeight} cm • {profileEyeColor} eyes
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeProfileViewer}
+                  className="p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)] hover:text-[#F5F7FF] transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex border-b border-[rgba(123,97,255,0.12)]">
+              {(['activity', 'limits', 'moderation'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setProfileActiveTab(tab)}
+                  className={cn(
+                    'flex-1 py-3 text-sm font-medium capitalize transition-colors relative',
+                    profileActiveTab === tab
+                      ? 'text-[#F5F7FF]'
+                      : 'text-[#A7B1C8] hover:text-[#F5F7FF]',
+                  )}
+                >
+                  {tab}
+                  {profileActiveTab === tab && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#7B61FF]" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 overflow-y-auto scrollbar-thin flex-1 space-y-4">
+              {profileActiveTab === 'activity' && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <button
+                      onClick={() => setProfileActiveInteraction('matches')}
+                      className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
+                        <Heart className="w-4 h-4" />
+                        <span className="text-sm">Matches</span>
+                      </div>
+                      <p className="text-2xl font-bold text-[#F5F7FF]">{profileMatches}</p>
+                    </button>
+                    <button
+                      onClick={() => setProfileActiveInteraction('likes_sent')}
+                      className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
+                        <Heart className="w-4 h-4" />
+                        <span className="text-sm">Likes Sent</span>
+                      </div>
+                      <p className="text-2xl font-bold text-[#F5F7FF]">{profileLikesSent}</p>
+                    </button>
+                    <button
+                      onClick={() => setProfileActiveInteraction('likes_received')}
+                      className="text-left p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-[#A7B1C8] mb-1">
+                        <Star className="w-4 h-4" />
+                        <span className="text-sm">Likes Received</span>
+                      </div>
+                      <p className="text-2xl font-bold text-[#F5F7FF]">{profileLikesReceived}</p>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
+                      <Clock className="w-5 h-5 text-[#A7B1C8]" />
+                      <div>
+                        <p className="text-sm text-[#A7B1C8]">Last Active</p>
+                        <p className="text-sm text-[#F5F7FF]">{profileLastActive}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
+                      <Calendar className="w-5 h-5 text-[#A7B1C8]" />
+                      <div>
+                        <p className="text-sm text-[#A7B1C8]">Joined</p>
+                        <p className="text-sm text-[#F5F7FF]">{profileJoined}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-[rgba(14,19,32,0.5)]">
+                      <MapPin className="w-5 h-5 text-[#A7B1C8]" />
+                      <div>
+                        <p className="text-sm text-[#A7B1C8]">Location</p>
+                        <p className="text-sm text-[#F5F7FF]">{profileLocation}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <p className="text-sm text-[#A7B1C8] mb-2">Profile</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <p className="text-[#A7B1C8] text-xs">Gender</p>
+                        <p className="text-[#F5F7FF]">{profileGender}</p>
+                      </div>
+                      <div>
+                        <p className="text-[#A7B1C8] text-xs">Age</p>
+                        <p className="text-[#F5F7FF]">{profileAge}</p>
+                      </div>
+                      <div>
+                        <p className="text-[#A7B1C8] text-xs">Height</p>
+                        <p className="text-[#F5F7FF]">{profileHeight} cm</p>
+                      </div>
+                      <div>
+                        <p className="text-[#A7B1C8] text-xs">Eyes</p>
+                        <p className="text-[#F5F7FF]">{profileEyeColor}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-[#A7B1C8] mb-1">Bio</p>
+                    <p className="text-sm text-[#F5F7FF]">{profileBio || 'No bio provided.'}</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <p className="text-sm text-[#A7B1C8] mb-3">Interests</p>
+                    <div className="flex flex-wrap gap-2">
+                      {profileInterests.map((interest) => (
+                        <span
+                          key={`${profileViewer.user.id}_interest_${interest}`}
+                          className="px-2.5 py-1 rounded-full text-xs bg-[rgba(123,97,255,0.14)] border border-[rgba(123,97,255,0.25)] text-[#CFC6FF]"
+                        >
+                          {interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {profileFields.length > 0 && (
+                    <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                      <p className="text-sm text-[#A7B1C8] mb-3">Registration Data</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        {profileFields.map(([label, value]) => (
+                          <div key={`${profileViewer.user.id}_field_${label}`}>
+                            <p className="text-[#A7B1C8] text-xs">{label}</p>
+                            <p className="text-[#F5F7FF]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {profileActiveTab === 'limits' && (
+                <>
+                  <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm text-[#A7B1C8]">Daily Swipes</span>
+                      <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                        <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                          <button
+                            onClick={() => adjustProfileLimit('daily_swipes', -1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            -
+                          </button>
+                          <button
+                            onClick={() => adjustProfileLimit('daily_swipes', 1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                          {profileLimits?.dailySwipesRemaining ?? 0} / {profileLimits?.dailySwipesTotal ?? 0} remaining
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
+                      <div
+                        className="h-full rounded-full bg-[#7B61FF]"
+                        style={{
+                          width: profileLimits
+                            ? `${Math.max(
+                                0,
+                                Math.min(100, (profileLimits.dailySwipesRemaining / profileLimits.dailySwipesTotal) * 100),
+                              )}%`
+                            : '0%',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm text-[#A7B1C8]">Super Likes</span>
+                      <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                        <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                          <button
+                            onClick={() => adjustProfileLimit('super_likes', -1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            -
+                          </button>
+                          <button
+                            onClick={() => adjustProfileLimit('super_likes', 1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                          {profileLimits?.superLikesRemaining ?? 0} / {profileLimits?.superLikesTotal ?? 0} remaining
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
+                      <div
+                        className="h-full rounded-full bg-[#4CC9F0]"
+                        style={{
+                          width: profileLimits
+                            ? `${Math.max(
+                                0,
+                                Math.min(100, (profileLimits.superLikesRemaining / profileLimits.superLikesTotal) * 100),
+                              )}%`
+                            : '0%',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm text-[#A7B1C8]">Boosts</span>
+                      <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                        <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                          <button
+                            onClick={() => adjustProfileLimit('boosts', -1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            -
+                          </button>
+                          <button
+                            onClick={() => adjustProfileLimit('boosts', 1)}
+                            disabled={!profileLimitsEditMode}
+                            className={limitAdjustButtonClass}
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                          {profileLimits?.boostsRemaining ?? 0} / {profileLimits?.boostsTotal ?? 0} remaining
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
+                      <div
+                        className="h-full rounded-full bg-[#2DD4A8]"
+                        style={{
+                          width: profileLimits
+                            ? `${Math.max(
+                                0,
+                                Math.min(100, (profileLimits.boostsRemaining / profileLimits.boostsTotal) * 100),
+                              )}%`
+                            : '0%',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {profileActiveTab === 'moderation' && (
+                <>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-[rgba(45,212,168,0.15)] flex items-center justify-center">
+                        <Shield className="w-5 h-5 text-[#2DD4A8]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#F5F7FF]">Trust Score</p>
+                        <p className="text-xs text-[#A7B1C8]">Based on profile history</p>
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        'text-2xl font-bold',
+                        profileTrustScore >= 90
+                          ? 'text-[#2DD4A8]'
+                          : profileTrustScore >= 80
+                            ? 'text-[#FFD166]'
+                            : 'text-[#FF6B6B]',
+                      )}
+                    >
+                      {profileTrustScore}
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[rgba(255,107,107,0.05)] border border-[rgba(255,107,107,0.2)]">
+                    <div className="flex items-center gap-2 mb-3">
+                      <AlertTriangle className="w-4 h-4 text-[#FF6B6B]" />
+                      <span className="text-sm font-medium text-[#FF6B6B]">Reports</span>
+                    </div>
+                    <p className="text-sm text-[#A7B1C8]">No active violations in this profile snapshot.</p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {profileActiveTab === 'limits' && (
+              <div className="p-4 border-t border-[rgba(123,97,255,0.12)]">
+                <button
+                  onClick={handleProfileEditLimits}
+                  disabled={!canChangeLimits}
+                  className="w-full btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Edit className="w-4 h-4" />
+                  {profileLimitsEditMode ? 'Save' : 'Edit Limits'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      , document.body)}
+
+      {typeof document !== 'undefined' && profileViewer && profileActiveInteraction && createPortal(
+        <div
+          className="fixed inset-0 z-[96] flex items-center justify-center p-4"
+          onClick={() => setProfileActiveInteraction(null)}
+        >
+          <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-md glass-panel max-h-[72vh] overflow-hidden flex flex-col"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-4 border-b border-[rgba(123,97,255,0.12)] flex items-center justify-between">
+              <div>
+                <p className="text-sm text-[#A7B1C8]">{profileInteractionTitle}</p>
+                <p className="text-xs text-[#A7B1C8]">{profileInteractionProfiles.length} profiles</p>
+              </div>
+              <button
+                onClick={() => setProfileActiveInteraction(null)}
+                className="p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)] hover:text-[#F5F7FF] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 space-y-2 overflow-y-auto scrollbar-thin">
+              {profileInteractionProfiles.map((profile) => (
+                <button
+                  key={`${profileActiveInteraction}_${profile.id}`}
+                  onClick={() => {
+                    if (!profileViewer) {
+                      return;
+                    }
+                    setProfileActiveInteraction(null);
+                    openProfileViewer(profile, profileViewer.contextCase);
+                  }}
+                  className="w-full text-left flex items-center gap-3 p-2 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)] hover:border-[rgba(123,97,255,0.35)] transition-colors"
+                >
+                  {profile.avatar ? (
+                    <img
+                      src={profile.avatar}
+                      alt={profile.name}
+                      className="w-11 h-11 rounded-xl border border-[rgba(123,97,255,0.25)] object-cover"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl border border-[rgba(123,97,255,0.25)] bg-[rgba(123,97,255,0.12)] flex items-center justify-center text-[#B7A9FF]">
+                      {profile.name.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-[#F5F7FF]">
+                      {profile.name}, {profile.age ?? 'N/A'}
+                    </p>
+                    <p className="text-xs text-[#A7B1C8]">{profile.username ?? 'No username'}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {typeof document !== 'undefined' && viewerOpen && viewerPhotos.length > 0 && createPortal(
         <div
           className="fixed inset-0 z-[100] bg-[rgba(6,8,14,0.82)] backdrop-blur-sm flex items-center justify-center p-4"
           onClick={closeViewer}
@@ -1917,7 +3177,7 @@ export function ModerationPage() {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }
