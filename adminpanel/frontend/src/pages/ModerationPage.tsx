@@ -1372,6 +1372,14 @@ type ModerationAction =
   | 'resolve'
   | 'request_info';
 
+type ReportDecision = 'warn' | 'ban';
+
+type ActionTemplate = {
+  id: string;
+  title: string;
+  message: string;
+};
+
 const actionPermissions = {
   approve: ADMIN_PERMISSIONS.approve_profiles,
   reject: ADMIN_PERMISSIONS.reject_profiles,
@@ -1399,6 +1407,78 @@ const actionsByType: Record<ModerationCaseType, ModerationAction[]> = {
   report: ['dismiss', 'warn', 'ban'],
   support: ['resolve', 'request_info'],
 };
+
+const onboardingRejectTemplates: ActionTemplate[] = [
+  {
+    id: 'ob_reject_1',
+    title: 'Profile policy mismatch',
+    message: 'Your profile was rejected due to policy mismatch. Please update your details and submit again.',
+  },
+  {
+    id: 'ob_reject_2',
+    title: 'Identity verification failed',
+    message: 'We could not verify your profile information. Please re-submit with accurate and complete details.',
+  },
+  {
+    id: 'ob_reject_3',
+    title: 'Content safety violation',
+    message: 'Your profile content violates safety rules. Please correct it and submit a new profile review.',
+  },
+];
+
+const onboardingRequestChangesTemplates: ActionTemplate[] = [
+  {
+    id: 'ob_changes_1',
+    title: 'Update photos',
+    message: 'Please update your profile photos to meet our quality and safety guidelines.',
+  },
+  {
+    id: 'ob_changes_2',
+    title: 'Fix bio text',
+    message: 'Please edit your bio to remove links/promotional text and resubmit for moderation.',
+  },
+  {
+    id: 'ob_changes_3',
+    title: 'Complete profile fields',
+    message: 'Please complete or correct required profile fields and submit again.',
+  },
+];
+
+const reportWarnTemplates: ActionTemplate[] = [
+  {
+    id: 'rp_warn_1',
+    title: 'First warning',
+    message: 'Your account received a warning due to reported behavior. Further violations may lead to restrictions.',
+  },
+  {
+    id: 'rp_warn_2',
+    title: 'Scam warning',
+    message: 'Reported scam-like behavior was detected. Any repeated violations can result in account suspension.',
+  },
+  {
+    id: 'rp_warn_3',
+    title: 'Profile integrity warning',
+    message: 'Your profile was reported for authenticity concerns. Please ensure all information is accurate.',
+  },
+];
+
+const reportBanTemplates: ActionTemplate[] = [
+  {
+    id: 'rp_ban_1',
+    title: 'Safety ban',
+    message: 'Your account has been banned due to severe safety policy violations.',
+  },
+  {
+    id: 'rp_ban_2',
+    title: 'Scam ban',
+    message: 'Your account has been banned due to confirmed scam activity.',
+  },
+  {
+    id: 'rp_ban_3',
+    title: 'Underage policy ban',
+    message: 'Your account has been banned due to underage policy violations.',
+  },
+];
 
 function FiltersBar({
   counts,
@@ -1590,10 +1670,12 @@ function ActionBar({
   caseType,
   onAction,
   canAction,
+  reportDecision,
 }: {
   caseType: ModerationCaseType;
   onAction: (action: ModerationAction) => void;
   canAction: (action: ModerationAction) => boolean;
+  reportDecision: ReportDecision | null;
 }) {
   const buttonClassByTone = {
     primary: 'btn-primary',
@@ -1607,27 +1689,53 @@ function ActionBar({
   const actions = actionsByType[caseType];
 
   return (
-    <div className="p-4 border-t border-[rgba(123,97,255,0.12)] flex flex-wrap gap-2">
-      {actions.map((action) => {
-        const meta = actionMeta[action];
-        const isPrimaryTone = meta.tone === 'primary' || meta.tone === 'danger';
+    <div className="p-4 border-t border-[rgba(123,97,255,0.12)] space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {actions.map((action) => {
+          const meta = actionMeta[action];
+          const isWideAction =
+            action === 'approve' ||
+            action === 'reject' ||
+            action === 'dismiss' ||
+            action === 'resolve';
+          const isReportDecisionButton =
+            caseType === 'report' && (action === 'warn' || action === 'ban');
+          const isSelectedReportDecision =
+            isReportDecisionButton && reportDecision === action;
+          const isDismissBlocked =
+            caseType === 'report' &&
+            action === 'dismiss' &&
+            !reportDecision;
+          const isDisabled = !canAction(action) || isDismissBlocked;
 
-        return (
-          <button
-            key={action}
-            onClick={() => onAction(action)}
-            disabled={!canAction(action)}
-            className={cn(
-              isPrimaryTone ? 'flex-1' : '',
-              'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed',
-              buttonClassByTone[meta.tone]
-            )}
-          >
-            {meta.icon}
-            {meta.label}
-          </button>
-        );
-      })}
+          return (
+            <button
+              key={action}
+              onClick={() => onAction(action)}
+              disabled={isDisabled}
+              className={cn(
+                isWideAction ? 'flex-1' : '',
+                action === 'ban' && 'ml-auto',
+                'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed',
+                buttonClassByTone[meta.tone],
+                isSelectedReportDecision &&
+                  'ring-1 ring-[rgba(123,97,255,0.65)] border-[rgba(123,97,255,0.45)]'
+              )}
+            >
+              {meta.icon}
+              {meta.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {caseType === 'report' && (
+        <p className="text-xs text-[#A7B1C8]">
+          Select <span className="text-[#FFD166]">Warn</span> or{' '}
+          <span className="text-[#FF6B6B]">Ban</span>, then press{' '}
+          <span className="text-[#B7A9FF]">Dismiss</span>.
+        </p>
+      )}
     </div>
   );
 }
@@ -1636,6 +1744,7 @@ function DetailPanel({
   caseItem,
   onAction,
   canAction,
+  reportDecision,
   onSendSupportReply,
   onOpenViewer,
   onOpenUserProfile,
@@ -1643,6 +1752,7 @@ function DetailPanel({
   caseItem: ModerationCase | null;
   onAction: (action: ModerationAction) => void;
   canAction: (action: ModerationAction) => boolean;
+  reportDecision: ReportDecision | null;
   onSendSupportReply: (caseId: string, text: string) => void;
   onOpenViewer: (photos: string[], startIndex: number) => void;
   onOpenUserProfile: (user: UserSummary, contextCase: ModerationCase) => void;
@@ -2070,7 +2180,12 @@ function DetailPanel({
           {activeTab === 'notes' && renderNotes()}
         </div>
 
-        <ActionBar caseType={caseItem.type} onAction={onAction} canAction={canAction} />
+        <ActionBar
+          caseType={caseItem.type}
+          onAction={onAction}
+          canAction={canAction}
+          reportDecision={reportDecision}
+        />
       </div>
     </div>
   );
@@ -2089,6 +2204,17 @@ export function ModerationPage() {
   const [profileViewer, setProfileViewer] = useState<{ user: UserSummary; contextCase: ModerationCase } | null>(null);
   const [profileActiveTab, setProfileActiveTab] = useState<'activity' | 'limits' | 'moderation'>('activity');
   const [profileActiveInteraction, setProfileActiveInteraction] = useState<ProfileInteractionType | null>(null);
+  const [reportDecisionByCaseId, setReportDecisionByCaseId] = useState<Record<string, ReportDecision>>({});
+  const [templateSheet, setTemplateSheet] = useState<{
+    caseId: string;
+    action: 'reject' | 'request_changes' | 'dismiss';
+    resolution?: ReportDecision;
+    title: string;
+    subtitle: string;
+    templates: ActionTemplate[];
+    selectedTemplateId: string;
+    message: string;
+  } | null>(null);
   const [profileLimitsByUserId, setProfileLimitsByUserId] = useState<Record<string, ProfileLimitsState>>({});
   const [profileLimitsEditMode, setProfileLimitsEditMode] = useState(false);
   const supportAPIEnabled = isSupportApiConfigured();
@@ -2148,6 +2274,10 @@ export function ModerationPage() {
   const countsByType = getCountsByType(cases);
   const filteredCases = filterCases({ cases, selectedType, selectedSubType, query });
   const selectedCase = filteredCases.find((caseItem) => caseItem.id === selectedCaseId) ?? null;
+  const selectedReportDecision =
+    selectedCase && selectedCase.type === 'report'
+      ? reportDecisionByCaseId[selectedCase.id] ?? null
+      : null;
 
   useEffect(() => {
     syncModerationCasesSnapshot(cases);
@@ -2164,6 +2294,32 @@ export function ModerationPage() {
       setSelectedCaseId(filteredCases[0]?.id ?? null);
     }
   }, [selectedType, selectedSubType, query, cases]);
+
+  useEffect(() => {
+    if (!templateSheet) {
+      return;
+    }
+
+    const stillExists = cases.some((caseItem) => caseItem.id === templateSheet.caseId);
+    if (!stillExists) {
+      setTemplateSheet(null);
+    }
+  }, [cases, templateSheet]);
+
+  useEffect(() => {
+    if (!templateSheet) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setTemplateSheet(null);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [templateSheet]);
 
   useEffect(() => {
     if (!viewerOpen) {
@@ -2314,6 +2470,15 @@ export function ModerationPage() {
   const canAction = (action: ModerationAction) => hasPermission(actionPermissions[action]);
 
   const removeCaseFromQueue = (caseID: string) => {
+    setReportDecisionByCaseId((prev) => {
+      if (!(caseID in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[caseID];
+      return next;
+    });
+
     setCases((prevCases) => {
       const nextCases = prevCases.filter((caseItem) => caseItem.id !== caseID);
       const nextFilteredCases = filterCases({
@@ -2332,11 +2497,46 @@ export function ModerationPage() {
     });
   };
 
-  const handleAction = async (action: ModerationAction) => {
-    if (!selectedCase || !canAction(action)) {
+  const openTemplateSheetForAction = ({
+    caseItem,
+    action,
+    resolution,
+    templates,
+    title,
+    subtitle,
+  }: {
+    caseItem: ModerationCase;
+    action: 'reject' | 'request_changes' | 'dismiss';
+    resolution?: ReportDecision;
+    templates: ActionTemplate[];
+    title: string;
+    subtitle: string;
+  }) => {
+    if (templates.length === 0) {
       return;
     }
 
+    setTemplateSheet({
+      caseId: caseItem.id,
+      action,
+      resolution,
+      title,
+      subtitle,
+      templates,
+      selectedTemplateId: templates[0].id,
+      message: templates[0].message,
+    });
+  };
+
+  const performModerationAction = async (
+    caseItem: ModerationCase,
+    action: ModerationAction,
+    extra?: {
+      reportDecision?: ReportDecision;
+      templateId?: string;
+      outboundMessage?: string;
+    },
+  ) => {
     logAdminAction(
       `moderation_${action}`,
       { id: 'current-admin', role },
@@ -2345,28 +2545,31 @@ export function ModerationPage() {
     );
     appendModerationChangeLog({
       type: 'action',
-      caseId: selectedCase.id,
-      caseType: selectedCase.type,
-      subType: selectedCase.subType,
-      targetUserId: selectedCase.user.id,
+      caseId: caseItem.id,
+      caseType: caseItem.type,
+      subType: caseItem.subType,
+      targetUserId: caseItem.user.id,
       actorId: 'current-admin',
       payload: {
         action,
-        statusBefore: selectedCase.status,
+        statusBefore: caseItem.status,
+        reportDecision: extra?.reportDecision ?? '',
+        templateId: extra?.templateId ?? '',
+        outboundMessage: extra?.outboundMessage ?? '',
       },
     });
 
-    if (selectedCase.type === 'support' && supportAPIEnabled) {
-      const conversationID = supportConversationIDFromCaseID(selectedCase.id);
+    if (caseItem.type === 'support' && supportAPIEnabled) {
+      const conversationID = supportConversationIDFromCaseID(caseItem.id);
       if (!conversationID) {
-        removeCaseFromQueue(selectedCase.id);
+        removeCaseFromQueue(caseItem.id);
         return;
       }
 
       try {
         if (action === 'resolve') {
           await setSupportConversationStatus(conversationID, 'done');
-          removeCaseFromQueue(selectedCase.id);
+          removeCaseFromQueue(caseItem.id);
           return;
         }
 
@@ -2374,13 +2577,13 @@ export function ModerationPage() {
           const nextStatus: SupportConversationStatus = 'waiting';
           await setSupportConversationStatus(conversationID, nextStatus);
           setCases((prevCases) =>
-            prevCases.map((caseItem) =>
-              caseItem.id === selectedCase.id
+            prevCases.map((queueCase) =>
+              queueCase.id === caseItem.id
                 ? {
-                    ...caseItem,
+                    ...queueCase,
                     status: mapSupportStatusToModeration(nextStatus),
                   }
-                : caseItem,
+                : queueCase,
             ),
           );
           return;
@@ -2391,7 +2594,135 @@ export function ModerationPage() {
       }
     }
 
-    removeCaseFromQueue(selectedCase.id);
+    removeCaseFromQueue(caseItem.id);
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    setTemplateSheet((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      const template = prev.templates.find((item) => item.id === templateId);
+      if (!template) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        selectedTemplateId: templateId,
+        message: template.message,
+      };
+    });
+  };
+
+  const handleTemplateMessageChange = (value: string) => {
+    setTemplateSheet((prev) => (prev ? { ...prev, message: value } : prev));
+  };
+
+  const closeTemplateSheet = () => {
+    setTemplateSheet(null);
+  };
+
+  const handleConfirmTemplateAction = async () => {
+    if (!templateSheet) {
+      return;
+    }
+
+    const targetCase = cases.find((caseItem) => caseItem.id === templateSheet.caseId);
+    if (!targetCase) {
+      setTemplateSheet(null);
+      return;
+    }
+
+    if (!canAction(templateSheet.action)) {
+      return;
+    }
+
+    const outboundMessage = templateSheet.message.trim();
+    if (!outboundMessage) {
+      return;
+    }
+
+    if (templateSheet.action === 'dismiss' && !templateSheet.resolution) {
+      return;
+    }
+
+    console.log('moderation_template_payload', {
+      caseId: targetCase.id,
+      userId: targetCase.user.id,
+      username: targetCase.user.username,
+      action: templateSheet.action,
+      reportDecision: templateSheet.resolution ?? null,
+      templateId: templateSheet.selectedTemplateId,
+      message: outboundMessage,
+    });
+
+    await performModerationAction(targetCase, templateSheet.action, {
+      reportDecision: templateSheet.resolution,
+      templateId: templateSheet.selectedTemplateId,
+      outboundMessage,
+    });
+
+    setTemplateSheet(null);
+  };
+
+  const handleAction = async (action: ModerationAction) => {
+    if (!selectedCase || !canAction(action)) {
+      return;
+    }
+
+    if (selectedCase.type === 'report' && (action === 'warn' || action === 'ban')) {
+      setReportDecisionByCaseId((prev) => ({ ...prev, [selectedCase.id]: action }));
+      logAdminAction(
+        `moderation_select_${action}`,
+        { id: 'current-admin', role },
+        '127.0.0.1',
+        getClientDevice(),
+      );
+      return;
+    }
+
+    if (selectedCase.type === 'onboarding' && action === 'reject') {
+      openTemplateSheetForAction({
+        caseItem: selectedCase,
+        action: 'reject',
+        templates: onboardingRejectTemplates,
+        title: 'Reject Templates',
+        subtitle: 'Choose a message template to notify the user about rejection.',
+      });
+      return;
+    }
+
+    if (selectedCase.type === 'onboarding' && action === 'request_changes') {
+      openTemplateSheetForAction({
+        caseItem: selectedCase,
+        action: 'request_changes',
+        templates: onboardingRequestChangesTemplates,
+        title: 'Request Changes Templates',
+        subtitle: 'Choose what to request from the user before next moderation pass.',
+      });
+      return;
+    }
+
+    if (selectedCase.type === 'report' && action === 'dismiss') {
+      const decision = reportDecisionByCaseId[selectedCase.id];
+      if (!decision) {
+        return;
+      }
+
+      openTemplateSheetForAction({
+        caseItem: selectedCase,
+        action: 'dismiss',
+        resolution: decision,
+        templates: decision === 'ban' ? reportBanTemplates : reportWarnTemplates,
+        title: decision === 'ban' ? 'Ban Notification Templates' : 'Warn Notification Templates',
+        subtitle: 'Choose a Telegram message template, then dismiss this report case.',
+      });
+      return;
+    }
+
+    await performModerationAction(selectedCase, action);
   };
 
   const handleSelectType = (type: ModerationViewType) => {
@@ -2575,6 +2906,13 @@ export function ModerationPage() {
     });
   };
 
+  const templateConfirmLabel =
+    templateSheet?.action === 'request_changes'
+      ? 'Send request changes'
+      : templateSheet?.action === 'dismiss'
+        ? 'Dismiss and send'
+        : 'Reject and send';
+
   return (
     <div className="p-6 animate-fade-in flex flex-col">
       <div className="glass-panel flex-1 min-h-[calc(100vh-64px-48px)] max-h-[min(calc(100vh-64px-48px),720px)] overflow-hidden flex">
@@ -2599,11 +2937,94 @@ export function ModerationPage() {
           caseItem={selectedCase}
           onAction={handleAction}
           canAction={canAction}
+          reportDecision={selectedReportDecision}
           onSendSupportReply={handleSendSupportReply}
           onOpenViewer={openViewer}
           onOpenUserProfile={openProfileViewer}
         />
       </div>
+
+      {typeof document !== 'undefined' && templateSheet && createPortal(
+        <div
+          className="fixed inset-0 z-[97] flex items-end justify-center p-4"
+          onClick={closeTemplateSheet}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
+          <div
+            className="relative w-full max-w-3xl glass-panel border border-[rgba(123,97,255,0.22)] rounded-2xl overflow-hidden animate-slide-up"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-4 border-b border-[rgba(123,97,255,0.12)] flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-[#F5F7FF]">{templateSheet.title}</p>
+                <p className="text-xs text-[#A7B1C8] mt-1">{templateSheet.subtitle}</p>
+              </div>
+              <button
+                onClick={closeTemplateSheet}
+                className="p-2 rounded-lg text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)] hover:text-[#F5F7FF] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {templateSheet.templates.map((template) => {
+                  const isSelected = template.id === templateSheet.selectedTemplateId;
+
+                  return (
+                    <button
+                      key={template.id}
+                      onClick={() => handleTemplateSelect(template.id)}
+                      className={cn(
+                        'text-left p-3 rounded-xl border transition-colors',
+                        isSelected
+                          ? 'bg-[rgba(123,97,255,0.14)] border-[rgba(123,97,255,0.45)]'
+                          : 'bg-[rgba(14,19,32,0.45)] border-[rgba(123,97,255,0.14)] hover:border-[rgba(123,97,255,0.3)]',
+                      )}
+                    >
+                      <p className="text-sm font-medium text-[#F5F7FF]">{template.title}</p>
+                      <p className="text-xs text-[#A7B1C8] mt-1 leading-relaxed">{template.message}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-[#A7B1C8] uppercase tracking-wide">Message</p>
+                <textarea
+                  value={templateSheet.message}
+                  onChange={(event) => handleTemplateMessageChange(event.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.55)] border border-[rgba(123,97,255,0.22)] text-[#F5F7FF] placeholder:text-[#A7B1C8] focus:outline-none focus:border-[rgba(123,97,255,0.45)] resize-none"
+                  placeholder="Type message for Telegram user..."
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-[#A7B1C8]">
+                  This message will be sent to the user after confirmation.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={closeTemplateSheet}
+                    className="px-4 py-2 rounded-lg text-sm border border-[rgba(123,97,255,0.22)] text-[#A7B1C8] hover:text-[#F5F7FF] hover:border-[rgba(123,97,255,0.4)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => void handleConfirmTemplateAction()}
+                    disabled={!templateSheet.message.trim()}
+                    className="px-4 py-2 rounded-lg text-sm font-medium btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {templateConfirmLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
 
       {typeof document !== 'undefined' && profileViewer && createPortal(
         <div
