@@ -1651,9 +1651,7 @@ function DetailPanel({
 
   const [activeTab, setActiveTab] = useState<DetailTab>('evidence');
   const [notesByCaseId, setNotesByCaseId] = useState<Record<string, string>>({});
-  const [noteTagsByCaseId, setNoteTagsByCaseId] = useState<Record<string, string[]>>({});
   const [replyDraftByCaseId, setReplyDraftByCaseId] = useState<Record<string, string>>({});
-  const onboardingHiddenTags = ['NSFW risk', 'Underage suspicion', 'Manual review'];
 
   useEffect(() => {
     if (!caseItem) {
@@ -1661,15 +1659,6 @@ function DetailPanel({
     }
 
     setActiveTab('evidence');
-    setNoteTagsByCaseId((prev) => {
-      if (prev[caseItem.id]) {
-        return prev;
-      }
-      const initialTags = (caseItem.tags ?? []).filter(
-        (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
-      );
-      return { ...prev, [caseItem.id]: initialTags };
-    });
   }, [caseItem]);
 
   const getIcon = (type: ModerationCaseType) => {
@@ -1704,25 +1693,6 @@ function DetailPanel({
   }
 
   const currentNote = notesByCaseId[caseItem.id] ?? '';
-  const baseCaseTags = (caseItem.tags ?? []).filter(
-    (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
-  );
-  const selectedNoteTags = (noteTagsByCaseId[caseItem.id] ?? baseCaseTags).filter(
-    (tag) => caseItem.type !== 'onboarding' || !onboardingHiddenTags.includes(tag)
-  );
-  const noteTagPool = caseItem.type === 'onboarding'
-    ? baseCaseTags
-    : Array.from(new Set([...baseCaseTags, 'NSFW risk', 'Underage suspicion', 'Link detected']));
-
-  const toggleNoteTag = (tag: string) => {
-    setNoteTagsByCaseId((prev) => {
-      const currentTags = prev[caseItem.id] ?? caseItem.tags ?? [];
-      const nextTags = currentTags.includes(tag)
-        ? currentTags.filter((currentTag) => currentTag !== tag)
-        : [...currentTags, tag];
-      return { ...prev, [caseItem.id]: nextTags };
-    });
-  };
 
   const renderEvidence = () => {
     if (caseItem.type === 'onboarding' && caseItem.onboarding) {
@@ -2041,30 +2011,6 @@ function DetailPanel({
           className="mt-1 w-full min-h-28 resize-y px-3 py-2 rounded-lg text-sm bg-[rgba(14,19,32,0.55)] border border-[rgba(123,97,255,0.18)] text-[#F5F7FF] placeholder:text-[#A7B1C8] focus:outline-none focus:border-[rgba(123,97,255,0.4)]"
         />
       </label>
-      {noteTagPool.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-[#A7B1C8]">Tags</p>
-          <div className="flex flex-wrap gap-2">
-            {noteTagPool.map((tag) => {
-              const active = selectedNoteTags.includes(tag);
-              return (
-                <button
-                  key={`${caseItem.id}_note_tag_${tag}`}
-                  onClick={() => toggleNoteTag(tag)}
-                  className={cn(
-                    'px-2 py-0.5 rounded-full text-xs border transition-colors',
-                    active
-                      ? 'bg-[rgba(123,97,255,0.18)] border-[rgba(123,97,255,0.35)] text-[#B7A9FF]'
-                      : 'border-[rgba(123,97,255,0.2)] text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)]'
-                  )}
-                >
-                  {tag}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 
