@@ -1,6 +1,14 @@
-# React + TypeScript + Vite
+# Adminpanel Frontend (React + TypeScript + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Frontend админки TGApp.
+
+## Quick start
+
+```bash
+cd adminpanel/frontend
+npm i
+npm run dev
+```
 
 ## E2E smoke tests (Playwright)
 
@@ -23,6 +31,28 @@ npm run test:e2e:headed
 npm run test:e2e:ui
 npm run test:e2e:report
 ```
+
+## Support API integration
+
+For live support chat in `Moderation -> Support`, set env vars before `npm run dev` or `npm run build`:
+
+```bash
+VITE_BACKEND_URL=http://localhost:8080
+VITE_ADMIN_BOT_TOKEN=your_admin_bot_token
+VITE_ADMIN_ACTOR_TG_ID=123456789
+```
+
+You can also set runtime fallbacks in `localStorage`:
+
+- `backendUrl`
+- `adminBotToken`
+- `adminActorTgId`
+
+## Admin login flow status
+
+- UI экрана логина (`telegram -> 2fa -> password`) уже есть в `src/pages/LoginPage.tsx`.
+- Полная интеграция с `adminpanel/backend/login` API пока не завершена (сейчас экран работает как UI flow).
+- Готовый backend login API описан в `adminpanel/backend/login/README.md`.
 
 Currently, two official plugins are available:
 

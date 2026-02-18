@@ -45,6 +45,16 @@ openssl rand -base64 32
 
 Применить можно любым вашим инструментом миграций (goose/migrate/ручной SQL).
 
+## Интеграция с основным backend (`/admin/*`)
+
+Чтобы JWT из этого сервиса принимался в `backend`:
+- `backend` должен быть с миграцией `backend/migrations/000012_add_admin_web_auth.up.sql`;
+- `backend` переменная `ADMIN_WEB_JWT_SECRET` должна совпадать с `LOGIN_JWT_SECRET`;
+- `ADMIN_WEB_SESSION_IDLE_TIMEOUT` и `LOGIN_SESSION_IDLE_TIMEOUT` лучше держать одинаковыми;
+- запросы в `backend /admin/*` идут с `Authorization: Bearer <access_token>`.
+
+`backend` дополнительно валидирует `sid` через таблицу `admin_sessions`, поэтому logout/idle/max-lifetime отрабатывают централизованно на уровне БД.
+
 ## Добавление пользователя вручную
 
 1. Сгенерировать hash пароля:
