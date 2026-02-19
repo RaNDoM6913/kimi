@@ -1032,7 +1032,7 @@ export function UsersPage() {
         </div>
 
         {filtersOpen && (
-          <div className="px-4 pb-4 border-b border-[rgba(123,97,255,0.12)]">
+          <div className="px-4 py-4 border-b border-[rgba(123,97,255,0.12)]">
             <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.12)] space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 <label className="block">

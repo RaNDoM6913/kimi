@@ -112,7 +112,7 @@ export function RolesPage() {
   }, {} as Record<string, Permission[]>);
 
   return (
-    <div className="p-6 h-[calc(100vh-64px)] animate-fade-in">
+    <div className="p-6 h-[calc(100vh-64px)] animate-fade-in flex flex-col">
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {[
@@ -136,7 +136,7 @@ export function RolesPage() {
       </div>
 
       {/* Main Content */}
-      <div className="glass-panel h-[calc(100%-140px)] overflow-hidden flex">
+      <div className="glass-panel flex-1 min-h-0 overflow-hidden flex">
         {/* Roles List */}
         <div className="w-72 border-r border-[rgba(123,97,255,0.12)] flex flex-col">
           <div className="p-3 border-b border-[rgba(123,97,255,0.12)]">
