@@ -1041,6 +1041,16 @@ const statusLabels: Record<ModerationStatus, string> = {
   resolved: 'Resolved',
 };
 
+const statusBadgeClassByStatus: Record<ModerationStatus, string> = {
+  new: 'bg-[rgba(245,247,255,0.08)] border-[rgba(245,247,255,0.16)] text-[#D5DCEE]',
+  in_review: 'bg-[rgba(123,97,255,0.16)] border-[rgba(123,97,255,0.28)] text-[#E7E3FF]',
+  changes_requested: 'bg-[rgba(255,209,102,0.16)] border-[rgba(255,209,102,0.28)] text-[#FFE2A6]',
+  approved: 'bg-[rgba(45,212,168,0.16)] border-[rgba(45,212,168,0.28)] text-[#9EF2DA]',
+  rejected: 'bg-[rgba(255,107,107,0.16)] border-[rgba(255,107,107,0.28)] text-[#FFB8B8]',
+  waiting_user: 'bg-[rgba(255,209,102,0.16)] border-[rgba(255,209,102,0.28)] text-[#FFE2A6]',
+  resolved: 'bg-[rgba(45,212,168,0.16)] border-[rgba(45,212,168,0.28)] text-[#9EF2DA]',
+};
+
 function getSubTypeLabel(caseItem: ModerationCase): string {
   if (caseItem.type === 'report') {
     return reportSubTypeLabels[caseItem.subType as ReportSubType];
@@ -1640,10 +1650,22 @@ function QueueList({
                       </>
                     ) : (
                       <>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
+                        <span
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs border uppercase',
+                            caseItem.type === 'report'
+                              ? 'bg-[rgba(255,107,107,0.12)] border-[rgba(255,107,107,0.22)] text-[#FFB8B8]'
+                              : 'bg-[rgba(76,201,240,0.12)] border-[rgba(76,201,240,0.22)] text-[#B6EFFF]',
+                          )}
+                        >
                           {caseItem.type}/{getSubTypeLabel(caseItem)}
                         </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]">
+                        <span
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs border',
+                            statusBadgeClassByStatus[caseItem.status],
+                          )}
+                        >
                           {statusLabels[caseItem.status]}
                         </span>
                       </>
@@ -1745,6 +1767,7 @@ function DetailPanel({
   onAction,
   canAction,
   reportDecision,
+  onUpdateSupportStatus,
   onSendSupportReply,
   onOpenViewer,
   onOpenUserProfile,
@@ -1753,6 +1776,10 @@ function DetailPanel({
   onAction: (action: ModerationAction) => void;
   canAction: (action: ModerationAction) => boolean;
   reportDecision: ReportDecision | null;
+  onUpdateSupportStatus: (
+    caseItem: ModerationCase,
+    nextStatus: Extract<ModerationStatus, 'in_review' | 'waiting_user'>,
+  ) => void;
   onSendSupportReply: (caseId: string, text: string) => void;
   onOpenViewer: (photos: string[], startIndex: number) => void;
   onOpenUserProfile: (user: UserSummary, contextCase: ModerationCase) => void;
@@ -1946,19 +1973,17 @@ function DetailPanel({
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            ['Category', supportSubTypeLabels[(caseItem.category ?? caseItem.subType) as SupportSubType]],
-            ['Status', statusLabels[caseItem.status]],
-          ].map(([label, value]) => (
-            <div
-              key={`${caseItem.id}_support_${label}`}
-              className="p-3 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]"
-            >
-              <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">{label}</p>
-              <p className="text-sm text-[#F5F7FF]">{value}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]">
+            <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Category</p>
+            <p className="text-sm text-[#F5F7FF]">
+              {supportSubTypeLabels[(caseItem.category ?? caseItem.subType) as SupportSubType]}
+            </p>
+          </div>
+          <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.45)] border border-[rgba(123,97,255,0.1)]">
+            <p className="text-[10px] uppercase tracking-wide text-[#A7B1C8]">Status</p>
+            <p className="text-sm text-[#F5F7FF]">{statusLabels[caseItem.status]}</p>
+          </div>
         </div>
 
         <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
@@ -2147,31 +2172,71 @@ function DetailPanel({
               </span>
             ) : (
               <>
-                <span className="px-2 py-0.5 rounded-full text-xs bg-[rgba(123,97,255,0.15)] text-[#B7A9FF] uppercase">
+                <span
+                  className={cn(
+                    'px-3 py-1 rounded-lg text-xs border uppercase',
+                    caseItem.type === 'report'
+                      ? 'bg-[rgba(255,107,107,0.12)] border-[rgba(255,107,107,0.22)] text-[#FFB8B8]'
+                      : 'bg-[rgba(76,201,240,0.12)] border-[rgba(76,201,240,0.22)] text-[#B6EFFF]',
+                  )}
+                >
                   {caseItem.type}/{getSubTypeLabel(caseItem)}
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-xs border border-[rgba(123,97,255,0.2)] text-[#A7B1C8]">
+                <span
+                  className={cn(
+                    'px-3 py-1 rounded-lg text-xs border',
+                    statusBadgeClassByStatus[caseItem.status],
+                  )}
+                >
                   {statusLabels[caseItem.status]}
                 </span>
               </>
             )}
           </div>
 
-          <div className="flex flex-wrap gap-1">
-            {tabLabels.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
-                  activeTab === tab.id
-                    ? 'bg-[rgba(123,97,255,0.2)] text-[#7B61FF]'
-                    : 'text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)]'
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+            <div className="flex flex-wrap gap-1">
+              {tabLabels.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'px-3 py-1 rounded-lg text-xs font-medium transition-colors',
+                    activeTab === tab.id
+                      ? 'bg-[rgba(123,97,255,0.2)] text-[#7B61FF]'
+                      : 'text-[#A7B1C8] hover:bg-[rgba(123,97,255,0.1)]'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {caseItem.type === 'support' && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => onUpdateSupportStatus(caseItem, 'in_review')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                    caseItem.status === 'in_review'
+                      ? 'bg-[rgba(123,97,255,0.2)] border-[rgba(123,97,255,0.35)] text-[#E7E3FF]'
+                      : 'bg-[rgba(123,97,255,0.08)] border-[rgba(123,97,255,0.2)] text-[#B7A9FF] hover:bg-[rgba(123,97,255,0.14)]',
+                  )}
+                >
+                  In review
+                </button>
+                <button
+                  onClick={() => onUpdateSupportStatus(caseItem, 'waiting_user')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs border transition-colors',
+                    caseItem.status === 'waiting_user'
+                      ? 'bg-[rgba(255,209,102,0.2)] border-[rgba(255,209,102,0.35)] text-[#FFE2A6]'
+                      : 'bg-[rgba(255,209,102,0.1)] border-[rgba(255,209,102,0.22)] text-[#FFD166] hover:bg-[rgba(255,209,102,0.16)]',
+                  )}
+                >
+                  Waiting user
+                </button>
+              </div>
+            )}
           </div>
 
           {activeTab === 'evidence' && renderEvidence()}
@@ -2468,6 +2533,63 @@ export function ModerationPage() {
   }, [supportAPIEnabled, selectedCase?.id, selectedCase?.type]);
 
   const canAction = (action: ModerationAction) => hasPermission(actionPermissions[action]);
+
+  const handleSupportStatusUpdate = async (
+    caseItem: ModerationCase,
+    nextStatus: Extract<ModerationStatus, 'in_review' | 'waiting_user'>,
+  ) => {
+    if (caseItem.type !== 'support' || caseItem.status === nextStatus) {
+      return;
+    }
+
+    logAdminAction(
+      `moderation_support_status_${nextStatus}`,
+      { id: 'current-admin', role },
+      '127.0.0.1',
+      getClientDevice(),
+    );
+    appendModerationChangeLog({
+      type: 'action',
+      caseId: caseItem.id,
+      caseType: caseItem.type,
+      subType: caseItem.subType,
+      targetUserId: caseItem.user.id,
+      actorId: 'current-admin',
+      payload: {
+        action: 'set_status',
+        statusBefore: caseItem.status,
+        statusAfter: nextStatus,
+      },
+    });
+
+    setCases((prevCases) =>
+      prevCases.map((queueCase) =>
+        queueCase.id === caseItem.id
+          ? {
+              ...queueCase,
+              status: nextStatus,
+            }
+          : queueCase,
+      ),
+    );
+
+    if (!supportAPIEnabled) {
+      return;
+    }
+
+    const conversationID = supportConversationIDFromCaseID(caseItem.id);
+    if (!conversationID) {
+      return;
+    }
+
+    try {
+      const targetStatus: SupportConversationStatus =
+        nextStatus === 'waiting_user' ? 'waiting' : 'in_review';
+      await setSupportConversationStatus(conversationID, targetStatus);
+    } catch (error) {
+      console.warn('Failed to update support case status', error);
+    }
+  };
 
   const removeCaseFromQueue = (caseID: string) => {
     setReportDecisionByCaseId((prev) => {
@@ -2797,11 +2919,23 @@ export function ModerationPage() {
   );
   const profileStatus = profileStatusConfig[profilePresence];
   const profileTelegramId = profileViewer ? resolveTelegramId(profileViewer.user.id) : 'unknown';
-  const profilePhotos =
+  const profilePhotoSource =
     profileViewer?.user.photos && profileViewer.user.photos.length > 0
       ? profileViewer.user.photos
-      : profileContextOnboarding?.photos ??
-        (profileViewer?.user.avatar ? [profileViewer.user.avatar] : []);
+      : profileContextOnboarding?.photos ?? [];
+  const profilePhotoFallback =
+    profileViewer?.user.avatar ?? 'https://picsum.photos/seed/mod_profile_fallback/600/800';
+  const profilePhotos =
+    profilePhotoSource.length >= 3
+      ? profilePhotoSource.slice(0, 3)
+      : [
+          ...profilePhotoSource,
+          ...Array.from(
+            { length: 3 - profilePhotoSource.length },
+            () => profilePhotoSource[profilePhotoSource.length - 1] ?? profilePhotoFallback,
+          ),
+        ];
+  const profilePrimaryPhoto = profilePhotos[0];
   const profileHeight = profileViewer?.user.heightCm ?? seedMetric(`${profileViewer?.user.id ?? 'u'}_h`, 155, 195);
   const profileEyeColor = profileViewer?.user.eyeColor ?? ['Hazel', 'Blue', 'Brown', 'Green'][seedMetric(`${profileViewer?.user.id ?? 'u'}_e`, 0, 3)];
   const profileMatches = seedMetric(`${profileViewer?.user.id ?? 'u'}_m`, 12, 96);
@@ -2938,6 +3072,7 @@ export function ModerationPage() {
           onAction={handleAction}
           canAction={canAction}
           reportDecision={selectedReportDecision}
+          onUpdateSupportStatus={handleSupportStatusUpdate}
           onSendSupportReply={handleSendSupportReply}
           onOpenViewer={openViewer}
           onOpenUserProfile={openProfileViewer}
@@ -3046,9 +3181,9 @@ export function ModerationPage() {
                     className="relative rounded-2xl transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[rgba(123,97,255,0.3)]"
                     aria-label="Open profile photos"
                   >
-                    {profileViewer.user.avatar ? (
+                    {profilePrimaryPhoto ? (
                       <img
-                        src={profileViewer.user.avatar}
+                        src={profilePrimaryPhoto}
                         alt={profileViewer.user.name}
                         className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)] cursor-zoom-in object-cover"
                       />
