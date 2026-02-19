@@ -33,6 +33,17 @@ const statusConfig = {
 };
 
 type InteractionType = 'matches' | 'likes_sent' | 'likes_received';
+type ProfileLimitKind = 'daily_swipes' | 'super_likes' | 'boosts' | 'subscription_days';
+type ProfileLimitsState = {
+  dailySwipesRemaining: number;
+  dailySwipesTotal: number;
+  superLikesRemaining: number;
+  superLikesTotal: number;
+  boostsRemaining: number;
+  boostsTotal: number;
+  subscriptionDaysRemaining: number;
+  subscriptionPlanName: string;
+};
 
 const defaultInterests = [
   'Travel',
@@ -74,8 +85,43 @@ function formatJoinedLabel(joined: string): string {
   return `${daysSinceJoin} ${dayLabel} • ${dd}.${mm}.${yyyy}`;
 }
 
+function formatDateToEuropean(value: string): string {
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(value)) {
+    return value;
+  }
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+  }
+
+  const parsedDate = new Date(value);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const year = String(parsedDate.getFullYear());
+    return `${day}.${month}.${year}`;
+  }
+
+  return value;
+}
+
 function stableHash(value: string): number {
   return value.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+}
+
+function resolveTelegramId(value: string): string {
+  const explicitMatch = value.match(/^tg_(\d+)$/);
+  if (explicitMatch) {
+    return explicitMatch[1];
+  }
+
+  const digits = value.replace(/\D/g, '');
+  if (digits) {
+    return String(700000000 + Number(digits));
+  }
+
+  return 'unknown';
 }
 
 function resolveLikesSent(user: User): number {
@@ -107,6 +153,40 @@ function resolveInterests(user: User): string[] {
 
   const start = stableHash(user.id) % defaultInterests.length;
   return Array.from({ length: 5 }, (_, index) => defaultInterests[(start + index) % defaultInterests.length]);
+}
+
+function normalizePlanLabel(user?: User): 'Free' | 'Gold' | 'Platinum' {
+  if (!user || !user.isPremium) {
+    return 'Free';
+  }
+
+  const tier = (user.subscriptionTier ?? '').trim().toLowerCase();
+  if (tier === 'gold') {
+    return 'Gold';
+  }
+  if (tier === 'plus' || tier === 'platinum' || tier === 'premium') {
+    return 'Platinum';
+  }
+
+  return 'Gold';
+}
+
+function createInitialProfileLimits(userId: string, user?: User): ProfileLimitsState {
+  const subscriptionPlanName = normalizePlanLabel(user);
+  const subscriptionDaysRemaining = user?.isPremium
+    ? 30 + (stableHash(`${userId}_sub_days`) % 336)
+    : 0;
+
+  return {
+    dailySwipesTotal: 120,
+    dailySwipesRemaining: 20 + (stableHash(`${userId}_swipes`) % 101),
+    superLikesTotal: 5,
+    superLikesRemaining: stableHash(`${userId}_super`) % 6,
+    boostsTotal: 3,
+    boostsRemaining: stableHash(`${userId}_boost`) % 4,
+    subscriptionDaysRemaining,
+    subscriptionPlanName,
+  };
 }
 
 function resolveInteractionProfiles(currentUser: User, type: InteractionType): User[] {
@@ -185,18 +265,18 @@ function FilterDropdown({
   const selectedLabel = options.find((option) => option.value === value)?.label ?? options[0]?.label ?? '';
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-0">
       <span className="text-xs uppercase tracking-wide text-[#A7B1C8]">{label}</span>
       <button
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          'mt-1 w-full px-3 py-2 rounded-lg text-sm border flex items-center justify-between gap-2 transition-colors',
+          'mt-1 w-full min-w-0 px-3 py-2 rounded-lg text-sm border flex items-center justify-between gap-2 transition-colors',
           open
             ? 'border-[rgba(123,97,255,0.55)] bg-[rgba(16,23,38,0.95)] text-[#F5F7FF]'
             : 'border-[rgba(123,97,255,0.18)] bg-[rgba(14,19,32,0.8)] text-[#F5F7FF] hover:border-[rgba(123,97,255,0.35)]'
         )}
       >
-        <span className="truncate">{selectedLabel}</span>
+        <span className="truncate min-w-0 flex-1 text-left">{selectedLabel}</span>
         <ChevronDown className={cn('w-4 h-4 text-[#A7B1C8] transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
@@ -240,14 +320,28 @@ function UserProfileModal({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [activeInteraction, setActiveInteraction] = useState<InteractionType | null>(null);
+  const [profileLimitsByUserId, setProfileLimitsByUserId] = useState<Record<string, ProfileLimitsState>>({});
+  const [profileLimitsEditMode, setProfileLimitsEditMode] = useState(false);
   const { hasPermission, role } = usePermissions();
   const canChangeLimits = hasPermission(ADMIN_PERMISSIONS.change_limits);
-  const canBanUsers = hasPermission(ADMIN_PERMISSIONS.ban_users);
-  const profilePhotos = user.photos?.length === 3 ? user.photos : [user.avatar, user.avatar, user.avatar];
+  const profilePhotoSource = user.photos && user.photos.length > 0 ? user.photos : [user.avatar];
+  const profilePhotos =
+    profilePhotoSource.length >= 3
+      ? profilePhotoSource.slice(0, 3)
+      : [
+          ...profilePhotoSource,
+          ...Array.from(
+            { length: 3 - profilePhotoSource.length },
+            () => profilePhotoSource[profilePhotoSource.length - 1] ?? user.avatar,
+          ),
+        ];
+  const profilePrimaryPhoto = profilePhotos[0] ?? user.avatar;
+  const profileTelegramId = user.telegramId ?? resolveTelegramId(user.id);
   const likesSent = resolveLikesSent(user);
   const profileHeight = resolveHeight(user);
   const eyeColor = resolveEyeColor(user);
   const interests = resolveInterests(user);
+  const profileLimits = profileLimitsByUserId[user.id] ?? createInitialProfileLimits(user.id, user);
   const interactionProfiles = activeInteraction ? resolveInteractionProfiles(user, activeInteraction) : [];
   const interactionTitle =
     activeInteraction === 'matches'
@@ -255,6 +349,20 @@ function UserProfileModal({
       : activeInteraction === 'likes_sent'
         ? 'Likes Sent'
         : 'Likes Received';
+  const profileFields: Array<[string, string]> = [
+    ['Display name', user.name],
+    ['Birthday', user.birthday ? formatDateToEuropean(user.birthday) : 'N/A'],
+    ['Gender', user.gender || 'N/A'],
+    ['Looking for', user.lookingFor ?? 'N/A'],
+    ['Dating goal', user.datingGoal ?? 'N/A'],
+    ['Language', user.language ?? 'N/A'],
+    ['City', user.location || 'N/A'],
+    ['Age', String(user.age)],
+    ['Zodiac', user.zodiac ?? 'N/A'],
+    ['Phone', user.phone || 'N/A'],
+  ];
+  const limitAdjustButtonClass =
+    'w-6 h-6 rounded-md border border-[rgba(123,97,255,0.25)] text-[#CFC6FF] hover:bg-[rgba(123,97,255,0.18)] disabled:opacity-0 disabled:pointer-events-none';
 
   const openViewer = (index: number) => {
     setViewerIndex(index);
@@ -300,10 +408,33 @@ function UserProfileModal({
     setViewerOpen(false);
     setViewerIndex(0);
     setActiveInteraction(null);
+    setProfileLimitsEditMode(false);
   }, [user.id]);
+
+  useEffect(() => {
+    setProfileLimitsByUserId((prev) =>
+      prev[user.id] ? prev : { ...prev, [user.id]: createInitialProfileLimits(user.id, user) },
+    );
+  }, [user]);
 
   const handleEditLimits = () => {
     if (!canChangeLimits) {
+      return;
+    }
+
+    if (activeTab !== 'limits') {
+      setActiveTab('limits');
+      return;
+    }
+
+    if (profileLimitsEditMode) {
+      logAdminAction(
+        `save_limits_${user.id}`,
+        { id: 'current-admin', role },
+        '127.0.0.1',
+        getClientDevice(),
+      );
+      setProfileLimitsEditMode(false);
       return;
     }
 
@@ -313,19 +444,33 @@ function UserProfileModal({
       '127.0.0.1',
       getClientDevice(),
     );
+    setProfileLimitsEditMode(true);
   };
 
-  const handleBanUser = () => {
-    if (!canBanUsers) {
+  const adjustProfileLimit = (kind: ProfileLimitKind, delta: number) => {
+    if (!profileLimitsEditMode) {
       return;
     }
 
-    logAdminAction(
-      `ban_user_${user.id}`,
-      { id: 'current-admin', role },
-      '127.0.0.1',
-      getClientDevice(),
-    );
+    setProfileLimitsByUserId((prev) => {
+      const current = prev[user.id] ?? createInitialProfileLimits(user.id, user);
+      const next = { ...current };
+
+      if (kind === 'daily_swipes') {
+        next.dailySwipesRemaining = Math.max(0, next.dailySwipesRemaining + delta);
+      }
+      if (kind === 'super_likes') {
+        next.superLikesRemaining = Math.max(0, next.superLikesRemaining + delta);
+      }
+      if (kind === 'boosts') {
+        next.boostsRemaining = Math.max(0, next.boostsRemaining + delta);
+      }
+      if (kind === 'subscription_days') {
+        next.subscriptionDaysRemaining = Math.max(0, next.subscriptionDaysRemaining + delta);
+      }
+
+      return { ...prev, [user.id]: next };
+    });
   };
 
   const modalContent = (
@@ -342,7 +487,7 @@ function UserProfileModal({
                 aria-label="Open profile photos"
               >
                 <img
-                  src={user.avatar}
+                  src={profilePrimaryPhoto}
                   alt={user.name}
                   className="w-20 h-20 rounded-2xl border-2 border-[rgba(123,97,255,0.25)] cursor-zoom-in"
                 />
@@ -365,6 +510,7 @@ function UserProfileModal({
                     {user.phone}
                   </span>
                 </div>
+                <p className="mt-0.5 text-sm text-[#A7B1C8]">Telegram ID: {profileTelegramId}</p>
                 <div className="flex items-center gap-3 mt-2">
                   <span
                     className={cn(
@@ -418,7 +564,12 @@ function UserProfileModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto scrollbar-thin flex-1">
+        <div
+          className={cn(
+            'overflow-y-auto scrollbar-thin flex-1',
+            activeTab === 'limits' ? 'px-6 pt-3 pb-4' : 'p-6',
+          )}
+        >
           {activeTab === 'activity' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -515,38 +666,176 @@ function UserProfileModal({
                   ))}
                 </div>
               </div>
+
+              {profileFields.length > 0 && (
+                <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                  <p className="text-sm text-[#A7B1C8] mb-3">Registration Data</p>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {profileFields.map(([label, value]) => (
+                      <div key={`${user.id}_field_${label}`}>
+                        <p className="text-[#A7B1C8] text-xs">{label}</p>
+                        <p className="text-[#F5F7FF]">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'limits' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
-                <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-[#A7B1C8]">Daily Swipes</span>
-                  <span className="text-sm text-[#F5F7FF]">Unlimited</span>
+                  <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                    <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                      <button
+                        onClick={() => adjustProfileLimit('daily_swipes', -1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        onClick={() => adjustProfileLimit('daily_swipes', 1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                      {profileLimits.dailySwipesRemaining} / {profileLimits.dailySwipesTotal} remaining
+                    </span>
+                  </div>
                 </div>
                 <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
-                  <div className="h-full w-full rounded-full bg-[#7B61FF]" />
+                  <div
+                    className="h-full rounded-full bg-[#7B61FF]"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (profileLimits.dailySwipesRemaining / profileLimits.dailySwipesTotal) * 100),
+                      )}%`,
+                    }}
+                  />
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
-                <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-[#A7B1C8]">Super Likes</span>
-                  <span className="text-sm text-[#F5F7FF]">5 / 5 remaining</span>
+                  <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                    <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                      <button
+                        onClick={() => adjustProfileLimit('super_likes', -1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        onClick={() => adjustProfileLimit('super_likes', 1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                      {profileLimits.superLikesRemaining} / {profileLimits.superLikesTotal} remaining
+                    </span>
+                  </div>
                 </div>
                 <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
-                  <div className="h-full w-full rounded-full bg-[#4CC9F0]" />
+                  <div
+                    className="h-full rounded-full bg-[#4CC9F0]"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (profileLimits.superLikesRemaining / profileLimits.superLikesTotal) * 100),
+                      )}%`,
+                    }}
+                  />
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
-                <div className="flex items-center justify-between mb-3">
+              <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-[#A7B1C8]">Boosts</span>
-                  <span className="text-sm text-[#F5F7FF]">2 / 3 remaining</span>
+                  <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                    <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                      <button
+                        onClick={() => adjustProfileLimit('boosts', -1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        onClick={() => adjustProfileLimit('boosts', 1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                      {profileLimits.boostsRemaining} / {profileLimits.boostsTotal} remaining
+                    </span>
+                  </div>
                 </div>
                 <div className="h-2 rounded-full bg-[rgba(123,97,255,0.1)]">
-                  <div className="h-full w-[66%] rounded-full bg-[#2DD4A8]" />
+                  <div
+                    className="h-full rounded-full bg-[#2DD4A8]"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (profileLimits.boostsRemaining / profileLimits.boostsTotal) * 100),
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-[#A7B1C8]">
+                    Plan <span className="text-[#F5F7FF]">{profileLimits.subscriptionPlanName}</span>
+                  </span>
+                  <div className="flex items-center justify-end gap-2 min-w-[240px]">
+                    <div className="flex items-center justify-end gap-2 w-[60px] translate-x-2">
+                      <button
+                        onClick={() => adjustProfileLimit('subscription_days', -1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        onClick={() => adjustProfileLimit('subscription_days', 1)}
+                        disabled={!profileLimitsEditMode}
+                        className={limitAdjustButtonClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-sm text-[#F5F7FF] min-w-[170px] text-right tabular-nums">
+                      {profileLimits.subscriptionDaysRemaining} days
+                    </span>
+                  </div>
+                </div>
+                <div className="h-1.5 rounded-full bg-[rgba(123,97,255,0.1)]">
+                  <div
+                    className="h-full rounded-full bg-[#FFD166]"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (profileLimits.subscriptionDaysRemaining / 365) * 100),
+                      )}%`,
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -589,25 +878,18 @@ function UserProfileModal({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="p-4 border-t border-[rgba(123,97,255,0.12)] flex gap-3">
-          <button
-            onClick={handleEditLimits}
-            disabled={!canChangeLimits}
-            className="flex-1 btn-secondary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Edit className="w-4 h-4" />
-            Edit Limits
-          </button>
-          <button
-            onClick={handleBanUser}
-            disabled={!canBanUsers}
-            className="flex-1 btn-danger flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Ban className="w-4 h-4" />
-            Ban User
-          </button>
-        </div>
+        {activeTab === 'limits' && (
+          <div className="px-4 pt-3 pb-3 border-t border-[rgba(123,97,255,0.12)]">
+            <button
+              onClick={handleEditLimits}
+              disabled={!canChangeLimits}
+              className="w-full btn-secondary py-1.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Edit className="w-4 h-4" />
+              {profileLimitsEditMode ? 'Save' : 'Edit Limits'}
+            </button>
+          </div>
+        )}
       </div>
 
       {activeInteraction && (
@@ -1157,7 +1439,12 @@ export function UsersPage() {
                     />
                   </td>
                   <td className="p-4">
-                    <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => openUserProfile(user)}
+                      disabled={!canViewPrivateData}
+                      className="w-full text-left flex items-center gap-3 rounded-lg p-1 -m-1 hover:bg-[rgba(123,97,255,0.08)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="View Profile"
+                    >
                       <div className="relative">
                         <img 
                           src={user.avatar} 
@@ -1173,7 +1460,7 @@ export function UsersPage() {
                         <p className="text-sm font-medium text-[#F5F7FF]">{user.name}</p>
                         <p className="text-xs text-[#A7B1C8]">{user.handle}</p>
                       </div>
-                    </div>
+                    </button>
                   </td>
                   <td className="p-4">
                     <span className="font-mono text-xs text-[#A7B1C8]">{user.id}</span>

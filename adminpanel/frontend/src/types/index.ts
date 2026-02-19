@@ -18,6 +18,12 @@ export interface User {
   location: string;
   gender: string;
   age: number;
+  birthday?: string;
+  zodiac?: string;
+  lookingFor?: string;
+  datingGoal?: string;
+  language?: string;
+  telegramId?: string;
   trustScore: number;
   status: 'online' | 'away' | 'offline';
   isPremium: boolean;

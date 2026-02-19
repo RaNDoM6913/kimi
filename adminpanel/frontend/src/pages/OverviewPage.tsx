@@ -12,6 +12,7 @@ import {
   growthChartData,
   alerts,
   revenueTrendChartDataWeekly,
+  revenueTrendChartData30Days,
   revenueTrendChartDataMonthly,
 } from '@/data/mockData';
 import { TrendingUp, AlertTriangle, Check, Info, AlertCircle, ChevronDown } from 'lucide-react';
@@ -27,6 +28,14 @@ const GROWTH_PERIOD_LABELS: Record<GrowthPeriod, string> = {
   '1m': '30 days',
   '3m': '3 months',
   '12m': '12 months',
+};
+
+const REVENUE_TREND_BY_PERIOD: Record<GrowthPeriod, number> = {
+  '1d': 1.6,
+  '7d': 4.2,
+  '1m': 8.1,
+  '3m': 12.4,
+  '12m': 27.9,
 };
 
 function getGrowthChartDataByPeriod(data: ChartDataPoint[], period: GrowthPeriod): ChartDataPoint[] {
@@ -66,8 +75,9 @@ function getRevenueChartDataByPeriod(period: GrowthPeriod): ChartDataPoint[] {
     case '1d':
       return revenueTrendChartDataWeekly.slice(-1);
     case '7d':
-    case '1m':
       return revenueTrendChartDataWeekly;
+    case '1m':
+      return revenueTrendChartData30Days;
     case '3m':
       return revenueTrendChartDataMonthly.slice(-3);
     case '12m':
@@ -145,6 +155,7 @@ export function OverviewPage() {
     () => getRevenueChartDataByPeriod(revenuePeriod),
     [revenuePeriod]
   );
+  const revenueTrendDelta = REVENUE_TREND_BY_PERIOD[revenuePeriod];
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
@@ -272,7 +283,7 @@ export function OverviewPage() {
               </div>
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-[#7B61FF]" />
-                <span className="text-sm text-[#7B61FF]">+8.1%</span>
+                <span className="text-sm text-[#7B61FF]">+{revenueTrendDelta}%</span>
               </div>
             </div>
             <DropdownMenu>
