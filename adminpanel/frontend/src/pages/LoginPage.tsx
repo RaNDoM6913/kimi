@@ -78,6 +78,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       case 'password': return 100;
     }
   };
+  const isAuthVerificationStep = step === '2fa' || step === 'password';
 
   return (
     <div className="min-h-screen bg-[#070B14] flex items-center justify-center relative overflow-hidden">
@@ -101,14 +102,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
       {/* Login Card */}
       <div className="relative z-10 w-full max-w-md mx-4">
-        <div className="glass-panel p-8 animate-slide-up">
+        <div className={cn("glass-panel p-8 animate-slide-up", isAuthVerificationStep && "min-h-[680px]")}>
           {/* Logo */}
           <div className="text-center mb-6">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7B61FF] to-[#4CC9F0] mb-4 shadow-lg shadow-[#7B61FF]/20">
               <Shield className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-[#F5F7FF] mb-1">Heartbeat Admin</h1>
-            <p className="text-sm text-[#A7B1C8]">Secure Admin Console</p>
           </div>
 
           {/* Progress Bar */}
@@ -185,16 +185,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 )}
               </button>
 
-              {/* Security Note */}
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-[rgba(14,19,32,0.5)] border border-[rgba(123,97,255,0.1)]">
-                <div className="w-10 h-10 rounded-lg bg-[rgba(123,97,255,0.15)] flex items-center justify-center flex-shrink-0">
-                  <Lock className="w-5 h-5 text-[#7B61FF]" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-[#F5F7FF]">Secure Connection</p>
-                  <p className="text-xs text-[#A7B1C8]">Your data is encrypted end-to-end</p>
-                </div>
-              </div>
             </div>
           )}
 
@@ -208,9 +198,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 <h2 className="text-lg font-semibold text-[#F5F7FF] mb-2">
                   Two-Factor Authentication
                 </h2>
-                <p className="text-sm text-[#A7B1C8]">
-                  Enter the 6-digit code from your authenticator app
-                </p>
               </div>
 
               {/* Success Badge */}
@@ -310,9 +297,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 <h2 className="text-lg font-semibold text-[#F5F7FF] mb-2">
                   Enter Your Password
                 </h2>
-                <p className="text-sm text-[#A7B1C8]">
-                  Provide your admin password to access the dashboard
-                </p>
               </div>
 
               {/* Success Badge */}
@@ -405,36 +389,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 Back to 2FA
               </button>
 
-              {/* Forgot Password */}
-              <div className="pt-2 text-center">
-                <a href="#" className="text-xs text-[#7B61FF] hover:underline">
-                  Forgot password?
-                </a>
-              </div>
             </form>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="mt-6 text-center">
-          <p className="text-xs text-[#A7B1C8]">
-            Protected by enterprise-grade security
-          </p>
-          <div className="flex items-center justify-center gap-4 mt-3">
-            <div className="flex items-center gap-1 text-[10px] text-[#A7B1C8]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#2DD4A8]" />
-              SSL Secure
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-[#A7B1C8]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#2DD4A8]" />
-              End-to-End Encrypted
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-[#A7B1C8]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#2DD4A8]" />
-              SOC 2 Compliant
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
